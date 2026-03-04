@@ -2,15 +2,23 @@
 
 A unified shell environment for macOS and Linux.
 
-## What it does
+## Setup
 
-Sets up a consistent zsh environment with:
-- Oh-My-Zsh + Powerlevel10k theme
-- Preferred aliases, tools, and settings
-- Shared workspace and SSH keys
+1. Pull the repo to `$HOME`
+   ```sh
+   git clone <repo> ~/myshell
+   ```
 
-## Usage
+2. Fill SSH keys from secret storage into `~/.ssh/`
 
-```sh
-# Coming soon
-```
+3. Run the setup script
+   ```sh
+   cd ~/myshell && ./setup.sh
+   ```
+
+## What it sets up
+
+- Fonts from https://ens.tw/font
+- zsh + Oh-My-Zsh + Powerlevel10k theme
+- Preferred aliases and tools
+- Git config

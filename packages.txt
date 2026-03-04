@@ -1,0 +1,16 @@
+# Package list
+# Format: package_name  or  brew_name:apt_name
+# Prefix [mac] for macOS only, [linux] for Linux only
+
+# Common
+git
+zsh
+jq
+tmux
+qrencode
+
+# macOS only
+[mac] watch
+
+# Linux only
+[linux] build-essential

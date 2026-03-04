@@ -1,0 +1,3 @@
+# Packages installed via curl on Linux
+# format: name:install_url
+zed:https://zed.dev/install.sh
