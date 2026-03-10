@@ -1,24 +1,28 @@
 # myshell
 
-A unified shell environment for macOS and Linux.
+A unified shell environment for macOS and Ubuntu Linux.
 
 ## Setup
 
-1. Pull the repo to `$HOME`
-   ```sh
-   git clone <repo> ~/myshell
-   ```
+Start with [setup.md](./setup.md).
 
-2. Fill SSH keys from secret storage into `~/.ssh/`
+This repo no longer expects you to run a bootstrap shell script. Install an AI agent in your CLI, open this repo, and have the agent follow [OBJECTIVE.md](./OBJECTIVE.md) to configure the shell.
 
-3. Run the setup script
-   ```sh
-   cd ~/myshell && ./setup.sh
-   ```
+The project is intended to work with different CLI AI agents, not one specific tool, and to support both macOS and Ubuntu Linux.
+
+## Current Implementation
+
+The repo currently provides:
+
+- modular shell config files such as `aliases.zsh`, `env.zsh`, and `p10k.zsh`
+- platform-aware package lists for macOS and Ubuntu Linux
+- [setup.md](./setup.md) as the user-facing setup flow
+- [OBJECTIVE.md](./OBJECTIVE.md) as the agent directive
+- several older scripts kept as legacy reference
 
 ## What it sets up
 
+- packages from the repo package lists
 - Fonts from https://ens.tw/font
 - zsh + Oh-My-Zsh + Powerlevel10k theme
 - Preferred aliases and tools
-- Git config
