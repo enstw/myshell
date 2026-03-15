@@ -24,3 +24,8 @@ fzf
 ripgrep
 tealdeer:tldr
 zoxide
+docker:docker.io
+p7zip:p7zip-full
+imagemagick
+ffmpeg
+[mac] proxmark3

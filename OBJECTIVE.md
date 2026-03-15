@@ -155,6 +155,34 @@ npm config set prefix '~/.npm-global'
 
 The PATH should include `~/.npm-global/bin`. This should be added to `~/.zshrc` or the repo-managed environment file.
 
+### Proxmark3 (Iceman fork)
+
+On macOS, `proxmark3` is installed via Homebrew.
+
+On Ubuntu Linux, the Iceman fork must be built from source. The AI agent should:
+
+1. Install build dependencies:
+
+```sh
+sudo apt install git ca-certificates build-essential pkg-config libreadline-dev gcc-arm-none-eabi libnewlib-dev libbz2-dev libssl-dev
+```
+
+2. Clone the repository if not already present:
+
+```sh
+git clone https://github.com/RfidResearchGroup/proxmark3.git ~/proxmark3
+```
+
+3. Build and install:
+
+```sh
+cd ~/proxmark3
+make clean && make -j$(nproc)
+sudo make install
+```
+
+4. Ensure the install is idempotent: skip if `pm3` is already available and up to date.
+
 ### Fonts
 
 The AI agent should ensure a Nerd Font or the configured prompt font is installed when needed for prompt rendering.
