@@ -12,13 +12,15 @@ qrencode
 # macOS only
 [mac] watch
 
-# Ubuntu Linux only
+# Ubuntu Linux only (no brew equivalent)
 [linux] build-essential
-[linux] npm
-[linux] bat
-[linux] eza
-[linux] fd-find
-[linux] fzf
-[linux] ripgrep
-[linux] tldr
-[linux] zoxide
+
+# Cross-platform (brew_name:apt_name where names differ)
+node:npm
+bat
+eza
+fd:fd-find
+fzf
+ripgrep
+tealdeer:tldr
+zoxide
