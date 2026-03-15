@@ -14,11 +14,10 @@ The project is intended to work with different CLI AI agents, not one specific t
 
 The repo currently provides:
 
-- modular shell config files such as `aliases.zsh`, `env.zsh`, and `p10k.zsh`
 - platform-aware package lists for macOS and Ubuntu Linux
 - [setup.md](./setup.md) as the user-facing setup flow
 - [OBJECTIVE.md](./OBJECTIVE.md) as the agent directive
-- several older scripts kept as legacy reference
+- legacy scripts and config files kept in [`archive/`](./archive/) for reference only — no longer maintained
 
 ## What it sets up
 

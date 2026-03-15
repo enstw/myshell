@@ -14,3 +14,10 @@ qrencode
 
 # Ubuntu Linux only
 [linux] build-essential
+[linux] bat
+[linux] eza
+[linux] fd-find
+[linux] fzf
+[linux] ripgrep
+[linux] tldr
+[linux] zoxide
