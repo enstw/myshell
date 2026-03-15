@@ -145,6 +145,16 @@ download_languages = ["zh_TW", "en"]
 languages = ["zh_TW", "en"]
 ```
 
+### npm
+
+The AI agent should ensure `npm` is installed and its global prefix is set to `~/.npm-global` so that globally installed packages do not require `sudo`:
+
+```sh
+npm config set prefix '~/.npm-global'
+```
+
+The PATH should include `~/.npm-global/bin`. This should be added to `~/.zshrc` or the repo-managed environment file.
+
 ### Fonts
 
 The AI agent should ensure a Nerd Font or the configured prompt font is installed when needed for prompt rendering.
