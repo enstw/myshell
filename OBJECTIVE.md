@@ -133,6 +133,18 @@ Package handling should explicitly support:
 - Homebrew on macOS
 - `apt` on Ubuntu Linux
 
+### tealdeer (tldr)
+
+On Ubuntu Linux, after installing `tldr`, the AI agent should generate the default config with `tldr --seed-config` and then update `~/.config/tealdeer/config.toml` so that only `zh_TW` and `en` languages are used:
+
+```toml
+[updates]
+download_languages = ["zh_TW", "en"]
+
+[search]
+languages = ["zh_TW", "en"]
+```
+
 ### Fonts
 
 The AI agent should ensure a Nerd Font or the configured prompt font is installed when needed for prompt rendering.
