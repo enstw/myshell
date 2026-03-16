@@ -9,8 +9,6 @@ The objective is to make shell setup:
 - modular
 - idempotent
 - inspectable
-- safe to rerun
-- easy to evolve file by file
 
 ## Primary Outcome
 
@@ -41,18 +39,21 @@ The repo should not depend on one specific AI agent implementation. Instructions
 
 The source of truth should be the small, readable files in this repo, especially:
 
-- `aliases.zsh`
-- `env.zsh`
-- `p10k.zsh`
 - `packages.txt`
 - `packages_cask.txt`
 - `packages_curl.txt`
+- ~/INSTALLATION_LOG.md
 
 There should be no required one-shot bootstrap script. The desired end state matters more than preserving all-in-one automation.
 
-`setup.md` should explain the human workflow: install an AI agent in the CLI and instruct it to follow this objective.
+`README.md` (this file) explains the human workflow: install an AI agent in the CLI and instruct it to follow this objective.
 
-Older machine-bootstrap files such as `myconfig.sh`, `myshell.sh`, `Startup.sh`, `mount_dev.sh`, `unmount_dev.sh`, and `mac_terminal_setup.md` should be treated as legacy reference material unless a task explicitly requires them.
+## Human Workflow
+
+To configure a machine, the user should:
+1. Install an AI agent in the CLI.
+2. Start the AI agent while in the **home directory** (`~`) to ensure it has full privileges for home folder configuration.
+3. Instruct the agent to follow this `README.md`.
 
 ## AI Agent Working Rules
 
@@ -66,6 +67,7 @@ When configuring a machine from this repo, the AI agent should:
 6. Use guarded blocks or explicit source lines when modifying shell startup files.
 7. Avoid interactive steps unless they are unavoidable.
 8. Avoid storing secrets, private keys, tokens, host-specific usernames, or personal machine paths in the repo.
+9. **Maintain a file named `~/INSTALLATION_LOG.md`** to track each installation step, decision, and result. This allows subsequent agent sessions to pick up where the previous one left off and understand the current state.
 
 ## Configuration Boundaries
 
@@ -111,18 +113,45 @@ The preferred implementation model is not:
 
 ## Shell State Requirements
 
-### `~/.zshrc`
+### zsh
 
-The AI agent should ensure `~/.zshrc`:
+The AI agent should ensure zsh as login shell:
 
-- loads Powerlevel10k in the normal supported way
 - enables the required Oh My Zsh theme and plugins
+- loads Powerlevel10k in the normal supported way
 - sources the repo-managed environment file
 - keeps changes localized and identifiable
 
-### Repo-managed config
+### Aliases
 
-The AI agent should prefer changing repo files such as `aliases.zsh` and `env.zsh` instead of stuffing custom logic directly into `~/.zshrc`.
+The AI agent should ensure the following aliases are available:
+
+```zsh
+alias ll='ls -alFG'
+alias qrencode='qrencode -t ansiutf8 -r'
+
+# Platform-aware update alias 'u'
+if [[ "$(uname)" == "Darwin" ]]; then
+    alias u='brew autoremove && brew cleanup && brew update && brew upgrade -g && brew cleanup && brew autoremove && brew cleanup ; brew doctor ; find ~/.oh-my-zsh/custom/{plugins,themes} -mindepth 1 -maxdepth 1 -type d -exec git -C {} pull \; ; omz update'
+else
+    alias u='sudo apt update && sudo apt -y full-upgrade && sudo apt -y autoremove ; find ~/.oh-my-zsh/custom/{plugins,themes} -mindepth 1 -maxdepth 1 -type d -exec git -C {} pull \; ; omz update'
+fi
+```
+
+### Environment Variables
+
+The AI agent should ensure the following environment settings are active:
+
+```zsh
+export PATH="$HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+export LANG=en_US.UTF-8
+umask 0077
+
+# Ensure Powerlevel10k config is sourced if it exists
+[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+```
+
+The AI agent should prefer placing these in a dedicated file (like `~/.aliases.zsh` and `~/.env.zsh`) and sourcing them from `~/.zshrc` to keep the main configuration clean.
 
 ### Packages
 
@@ -133,10 +162,11 @@ Package handling should explicitly support:
 - Homebrew on macOS
 - `apt` on Ubuntu Linux
 
-### tealdeer (tldr)
+### tldr (tealdeer)
 
-On Ubuntu Linux, after installing `tldr`, the AI agent should generate the default config with `tldr --seed-config` and then update `~/.config/tealdeer/config.toml` so that only `zh_TW` and `en` languages are used:
+On Ubuntu Linux, after installing `tldr`, the AI agent should generate the default configi. ex. `tldr --seed-config` and update it so that only `zh_TW` and `en` languages are used:
 
+ex. tealdeer config file
 ```toml
 [updates]
 download_languages = ["zh_TW", "en"]
@@ -200,6 +230,7 @@ The objective is complete when all of the following are true:
 - the setup logic remains valid on both macOS and Ubuntu Linux
 - machine-specific secrets or private data are not committed
 - the implementation is understandable without reading a large monolithic script
+- `~/INSTALLATION_LOG.md` exists and accurately reflects the steps taken to configure the machine.
 
 ## Decision Policy
 
