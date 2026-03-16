@@ -82,12 +82,12 @@ In scope:
 - package lists needed for shell workflows
 - terminal font prerequisites
 - small helper scripts directly related to shell use
+- timezone and locale configuration
 
 Out of scope unless explicitly requested:
 
 - copying SSH keys
 - host naming
-- timezone changes
 - global permission changes to the full home directory
 - mounting host directories
 - VM bootstrap logic
@@ -152,6 +152,13 @@ umask 0077
 ```
 
 The AI agent should prefer placing these in a dedicated file (like `~/.aliases.zsh` and `~/.env.zsh`) and sourcing them from `~/.zshrc` to keep the main configuration clean.
+
+### Timezone and Locale
+
+The AI agent should ensure the machine is configured with the correct timezone and locale:
+
+- **Timezone:** Set to `Asia/Taipei`.
+- **Locale:** Ensure `en_US.UTF-8` and `en_GB.UTF-8` are generated, and `LANG` is set to `en_US.UTF-8`.
 
 ### Packages
 
