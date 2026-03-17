@@ -18,7 +18,7 @@ glow
 [ubuntu] build-essential
 
 # Cross-platform (brew_name:apt_name where names differ)
-node:nodejs
+npm
 bat:batcat
 eza
 fd:fd-find

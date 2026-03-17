@@ -174,17 +174,39 @@ else
 fi
 
 # Upgrade all outdated pip packages
-alias upip="pip3 list -o | cut -f1 -d' ' | tr \" \" \"\\n\" | awk '{if(NR>=3)print}' | cut -d' ' -f1 | xargs -n1 pip3 install -U"
+alias upip='pip3 list -o --format=json | python3 -c "import sys,json;[print(p[\"name\"])for p in json.load(sys.stdin)]" | xargs -n1 pip3 install -U'
 
-# Platform-aware update alias 'u'
-if [[ "$(uname)" == "Darwin" ]]; then
-    alias u='brew autoremove && brew cleanup && brew update && brew upgrade -g && brew cleanup && brew autoremove && brew cleanup ; brew doctor ; find ~/.oh-my-zsh/custom/{plugins,themes} -mindepth 1 -maxdepth 1 -type d -exec git -C {} pull \; ; omz update'
-else
-    alias u='sudo apt update && sudo apt -y full-upgrade && sudo apt -y autoremove ; find ~/.oh-my-zsh/custom/{plugins,themes} -mindepth 1 -maxdepth 1 -type d -exec git -C {} pull \; ; sudo snap refresh ; omz update'
-    # Note: `sudo snap refresh` is included because some Ubuntu systems have snap-installed packages.
-    # Remove it from the alias if snap is not in use.
-fi
+# System update (delegates to ~/bin/update for readability)
+alias u='~/bin/update'
 ```
+
+### ~/bin/update
+
+The `u` alias delegates to `~/bin/update`. The AI agent should create this script with the following content:
+
+```sh
+#!/bin/sh
+set -e
+
+update_omz_custom() {
+    find ~/.oh-my-zsh/custom/{plugins,themes} -mindepth 1 -maxdepth 1 -type d -exec git -C {} pull \;
+}
+
+if [ "$(uname)" = "Darwin" ]; then
+    brew update && brew upgrade -g
+    brew autoremove && brew cleanup
+    brew doctor
+else
+    sudo apt update && sudo apt -y full-upgrade && sudo apt -y autoremove
+    # Include snap refresh if snap is in use; remove otherwise
+    sudo snap refresh
+fi
+
+update_omz_custom
+omz update
+```
+
+The script should be executable (`chmod +x ~/bin/update`). `~/bin` is already on PATH via `env.zsh`.
 
 ### env.zsh
 
@@ -290,13 +312,11 @@ download_languages = ["zh_TW", "en"]
 languages = ["zh_TW", "en"]
 ```
 
-### Node.js
-
-Node is installed via system packages (`brew install node` / `apt install nodejs`). This intentionally uses the system-provided version. If a project requires a specific Node version, use a version manager like `fnm` or `nvm` on a per-project basis — that is out of scope for this repo.
-
 ### npm
 
-The AI agent should ensure `npm` is installed (it comes with `node`/`nodejs` from `packages.txt`) and its global prefix is set to `~/.npm-global` so that globally installed packages do not require `sudo`:
+The `npm` package is listed in `packages.txt` and pulls in Node.js as a dependency on both platforms. Node is not installed explicitly — it is only needed as a runtime for npm-based tools (e.g. AI agents). If a project requires a specific Node version, use a version manager like `fnm` or `nvm` on a per-project basis — that is out of scope for this repo.
+
+The AI agent should ensure the npm global prefix is set to `~/.npm-global` so that globally installed packages do not require `sudo`:
 
 ```sh
 npm config set prefix '~/.npm-global'
