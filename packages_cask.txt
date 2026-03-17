@@ -1,2 +1,3 @@
 # macOS cask packages (brew install --cask)
+docker
 zed

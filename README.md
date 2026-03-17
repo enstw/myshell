@@ -48,6 +48,8 @@ There should be no required one-shot bootstrap script. The desired end state mat
 
 `README.md` (this file) explains the human workflow: install an AI agent in the CLI and instruct it to follow this objective.
 
+The `archive/` folder contains legacy files kept for reference. They are **not** used by the current setup and should **not** be executed or sourced by AI agents.
+
 ## Human Workflow
 
 To configure a machine, the user should:
@@ -127,11 +129,12 @@ The AI agent should ensure zsh as login shell:
 The AI agent should ensure the following Oh My Zsh plugins are enabled:
 
 ```zsh
-plugins=(git zsh-autosuggestions zsh-syntax-highlighting fzf z)
+plugins=(git zsh-autosuggestions zsh-syntax-highlighting fzf)
 ```
 
 - `zsh-autosuggestions` and `zsh-syntax-highlighting` are custom plugins and must be cloned into `$ZSH_CUSTOM/plugins/` if not already present.
-- `git`, `fzf`, and `z` are bundled with Oh My Zsh.
+- `git` and `fzf` are bundled with Oh My Zsh.
+- The bundled `z` plugin is intentionally omitted because `zoxide` (loaded via `zoxide.zsh`) supersedes it.
 
 ### Configuration File Layout
 
@@ -330,6 +333,10 @@ sudo make install
 ```
 
 4. Ensure the install is idempotent: skip if `pm3` is already available and up to date.
+
+### Powerlevel10k Configuration
+
+After Oh My Zsh and Powerlevel10k are installed, the user should run `p10k configure` interactively to generate `~/.p10k.zsh`. This is a one-time manual step — the wizard requires visual feedback to choose prompt styles. The AI agent should **not** attempt to run or automate this wizard.
 
 ### Fonts
 
