@@ -145,7 +145,9 @@ This provides package suggestions when a user runs a command that is not install
 
 ### Aliases
 
-The AI agent should ensure the following aliases are available:
+Aliases should be placed in `~/.oh-my-zsh/custom/aliases.zsh`. Oh My Zsh automatically sources all `*.zsh` files in the custom folder, so no explicit `source` line is needed in `~/.zshrc`.
+
+The AI agent should ensure the following aliases are available in that file:
 
 ```zsh
 # Modern CLI replacements
@@ -157,11 +159,14 @@ alias fd='fdfind'
 
 alias qrencode='qrencode -t ansiutf8 -r'
 
+# Upgrade all outdated pip packages
+alias upip="pip3 list -o | cut -f1 -d' ' | tr \" \" \"\\n\" | awk '{if(NR>=3)print}' | cut -d' ' -f1 | xargs -n1 pip3 install -U"
+
 # Platform-aware update alias 'u'
 if [[ "$(uname)" == "Darwin" ]]; then
     alias u='brew autoremove && brew cleanup && brew update && brew upgrade -g && brew cleanup && brew autoremove && brew cleanup ; brew doctor ; find ~/.oh-my-zsh/custom/{plugins,themes} -mindepth 1 -maxdepth 1 -type d -exec git -C {} pull \; ; omz update'
 else
-    alias u='sudo apt update && sudo apt -y full-upgrade && sudo apt -y autoremove ; find ~/.oh-my-zsh/custom/{plugins,themes} -mindepth 1 -maxdepth 1 -type d -exec git -C {} pull \; ; omz update'
+    alias u='sudo apt update && sudo apt -y full-upgrade && sudo apt -y autoremove ; find ~/.oh-my-zsh/custom/{plugins,themes} -mindepth 1 -maxdepth 1 -type d -exec git -C {} pull \; ; sudo snap refresh ; omz update'
 fi
 ```
 
@@ -178,7 +183,7 @@ umask 0077
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 ```
 
-The AI agent should prefer placing these in a dedicated file (like `~/.aliases.zsh` and `~/.env.zsh`) and sourcing them from `~/.zshrc` to keep the main configuration clean.
+The AI agent should prefer placing environment variables in a dedicated file (like `~/.env.zsh`) and sourcing it from `~/.zshrc` to keep the main configuration clean. Aliases belong in `~/.oh-my-zsh/custom/aliases.zsh` (see Aliases section above).
 
 ### zoxide
 
