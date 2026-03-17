@@ -42,7 +42,7 @@ The source of truth should be the small, readable files in this repo, especially
 - `packages.txt`
 - `packages_cask.txt`
 - `packages_curl.txt`
-- ~/INSTALLATION_LOG.md
+- ~/.install.log
 
 There should be no required one-shot bootstrap script. The desired end state matters more than preserving all-in-one automation.
 
@@ -67,7 +67,7 @@ When configuring a machine from this repo, the AI agent should:
 6. Use guarded blocks or explicit source lines when modifying shell startup files.
 7. Avoid interactive steps unless they are unavoidable.
 8. Avoid storing secrets, private keys, tokens, host-specific usernames, or personal machine paths in the repo.
-9. **Maintain a file named `~/INSTALLATION_LOG.md`** to track each installation step, decision, and result. This allows subsequent agent sessions to pick up where the previous one left off and understand the current state.
+9. **Maintain a file named `~/.install.log`** to track each installation step, decision, and result. This allows subsequent agent sessions to pick up where the previous one left off and understand the current state.
 
 ## Configuration Boundaries
 
@@ -316,7 +316,7 @@ The objective is complete when all of the following are true:
 - the setup logic remains valid on both macOS and Ubuntu Linux
 - machine-specific secrets or private data are not committed
 - the implementation is understandable without reading a large monolithic script
-- `~/INSTALLATION_LOG.md` exists and accurately reflects the steps taken to configure the machine.
+- `~/.install.log` exists and accurately reflects the steps taken to configure the machine.
 
 ## Decision Policy
 
