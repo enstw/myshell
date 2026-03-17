@@ -141,7 +141,7 @@ The recommended layout:
 | File | Purpose |
 |------|---------|
 | `~/.oh-my-zsh/custom/aliases.zsh` | All aliases (modern CLI replacements, update, etc.) |
-| `~/.oh-my-zsh/custom/env.zsh` | Environment variables, PATH additions, PATH dedup, `LANG`, `XAUTHORITY`, `DOCKER_DEFAULT_PLATFORM` |
+| `~/.oh-my-zsh/custom/env.zsh` | Environment variables, PATH additions, PATH dedup, `LANG`, plus Linux-only `XAUTHORITY` and `DOCKER_DEFAULT_PLATFORM` |
 | `~/.oh-my-zsh/custom/motd.zsh` | Dynamic MOTD display (Ubuntu Linux) |
 | `~/.oh-my-zsh/custom/zoxide.zsh` | zoxide init (`eval "$(zoxide init zsh)"`) |
 
@@ -149,7 +149,7 @@ The recommended layout:
 
 - Powerlevel10k instant prompt block (must be at the very top)
 - `ZSH_THEME`, `plugins=()`, and `source $ZSH/oh-my-zsh.sh` (core OMZ config)
-- `source /etc/zsh_command_not_found` (Ubuntu only, not all systems have it)
+- `[[ -f /etc/zsh_command_not_found ]] && source /etc/zsh_command_not_found` (Ubuntu only, guarded)
 - `[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh` (p10k convention, stays at bottom)
 
 ### aliases.zsh
@@ -159,10 +159,15 @@ The recommended layout:
 alias ls='eza --icons'
 alias ll='eza -la --icons --git'
 alias lt='eza --tree --icons'
-alias cat='batcat --paging=never'
-alias fd='fdfind'
-
 alias qrencode='qrencode -t ansiutf8 -r'
+
+# Platform-aware aliases (Ubuntu uses different binary names)
+if [[ "$(uname)" == "Darwin" ]]; then
+    alias cat='bat --paging=never'
+else
+    alias cat='batcat --paging=never'
+    alias fd='fdfind'
+fi
 
 # Upgrade all outdated pip packages
 alias upip="pip3 list -o | cut -f1 -d' ' | tr \" \" \"\\n\" | awk '{if(NR>=3)print}' | cut -d' ' -f1 | xargs -n1 pip3 install -U"
@@ -180,11 +185,14 @@ fi
 ```zsh
 export PATH="$HOME/bin:$HOME/.local/bin:$HOME/.npm-global/bin:/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
 export LANG=zh_TW.UTF-8
-export XAUTHORITY=$HOME/.Xauthority
 umask 0077
 
-# Set Docker platform on ARM hosts
-[[ $(uname -m) == "aarch64" ]] && export DOCKER_DEFAULT_PLATFORM=linux/arm64
+# Linux-only environment
+if [[ "$(uname)" != "Darwin" ]]; then
+    export XAUTHORITY=$HOME/.Xauthority
+    # aarch64 Docker default (e.g. ARM VMs)
+    [[ $(uname -m) == "aarch64" ]] && export DOCKER_DEFAULT_PLATFORM=linux/arm64
+fi
 
 # Deduplicate PATH
 export PATH="$(perl -e 'print join(":", grep { not $seen{$_}++ } split(/:/, $ENV{PATH}))')"
@@ -216,10 +224,10 @@ This replicates the login MOTD behavior that zsh does not display by default. Th
 
 ### command-not-found
 
-On Ubuntu Linux, the AI agent should ensure the `command-not-found` handler is sourced in `~/.zshrc` (not in the custom folder, as not all systems have this file):
+On Ubuntu Linux, the AI agent should ensure the `command-not-found` handler is sourced in `~/.zshrc` (not in the custom folder, as not all systems have this file). Use a guard so it is safe on macOS:
 
 ```zsh
-source /etc/zsh_command_not_found
+[[ -f /etc/zsh_command_not_found ]] && source /etc/zsh_command_not_found
 ```
 
 This provides package suggestions when a user runs a command that is not installed.
