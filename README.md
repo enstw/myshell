@@ -178,6 +178,8 @@ if [[ "$(uname)" == "Darwin" ]]; then
     alias u='brew autoremove && brew cleanup && brew update && brew upgrade -g && brew cleanup && brew autoremove && brew cleanup ; brew doctor ; find ~/.oh-my-zsh/custom/{plugins,themes} -mindepth 1 -maxdepth 1 -type d -exec git -C {} pull \; ; omz update'
 else
     alias u='sudo apt update && sudo apt -y full-upgrade && sudo apt -y autoremove ; find ~/.oh-my-zsh/custom/{plugins,themes} -mindepth 1 -maxdepth 1 -type d -exec git -C {} pull \; ; sudo snap refresh ; omz update'
+    # Note: `sudo snap refresh` is included because some Ubuntu systems have snap-installed packages.
+    # Remove it from the alias if snap is not in use.
 fi
 ```
 
@@ -276,9 +278,7 @@ sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin dock
 
 ### tldr (tealdeer)
 
-On Ubuntu Linux, after installing `tldr`, the AI agent should generate the default config. ex. `tldr --seed-config` and update it so that only `zh_TW` and `en` languages are used:
-
-ex. tealdeer config file
+After installing `tldr`, the AI agent should generate the default config via `tldr --seed-config` and update it so that only `zh_TW` and `en` languages are used. The config file path varies by platform — use `tldr --show-paths` to locate it (e.g. `~/.config/tealdeer/config.toml` on Linux, `~/Library/Application Support/tealdeer/config.toml` on macOS):
 ```toml
 [updates]
 download_languages = ["zh_TW", "en"]
@@ -293,7 +293,7 @@ Node is installed via system packages (`brew install node` / `apt install nodejs
 
 ### npm
 
-The AI agent should ensure `npm` is installed and its global prefix is set to `~/.npm-global` so that globally installed packages do not require `sudo`:
+The AI agent should ensure `npm` is installed (it comes with `node`/`nodejs` from `packages.txt`) and its global prefix is set to `~/.npm-global` so that globally installed packages do not require `sudo`:
 
 ```sh
 npm config set prefix '~/.npm-global'
