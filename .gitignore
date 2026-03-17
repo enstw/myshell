@@ -1,3 +1,2 @@
-*.swp
-test
-.DS_Store
+*.DS_Store
+.install.log

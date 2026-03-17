@@ -1,3 +1,4 @@
-# Packages installed via curl on Linux
+# Packages installed via curl (Linux only)
+# These are Linux alternatives for packages that use `brew --cask` on macOS.
 # format: name:install_url
-zed:https://zed.dev/install.sh
+[linux] zed:https://zed.dev/install.sh

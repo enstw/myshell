@@ -1,23 +1,5 @@
-# myshell
+# Archive
 
-A unified shell environment for macOS and Ubuntu Linux.
+Legacy files kept for reference. These are **not** used by the current declarative setup and should **not** be executed or sourced by AI agents.
 
-## Setup
-
-Start with [setup.md](./setup.md).
-
-## Current Implementation
-
-The repo currently provides:
-
-- platform-aware package lists for macOS and Ubuntu Linux
-- [setup.md](./setup.md) as the user-facing setup flow
-- [OBJECTIVE.md](./OBJECTIVE.md) as the agent directive
-- legacy scripts and config files kept in [`archive/`](./archive/) for reference only — no longer maintained
-
-## What it sets up
-
-- packages from the repo package lists
-- Fonts from https://ens.tw/font
-- zsh + Oh-My-Zsh + Powerlevel10k theme
-- Preferred aliases and tools
+Contents include old bootstrap scripts, terminal profiles, and patch files from earlier iterations of this project.

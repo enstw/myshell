@@ -18,15 +18,15 @@ glow
 [linux] build-essential
 
 # Cross-platform (brew_name:apt_name where names differ)
-node:npm
-bat
+node:nodejs
+bat:batcat
 eza
 fd:fd-find
 fzf
 ripgrep
 tealdeer:tldr
 zoxide
-docker:docker.io
+[mac] docker
 p7zip:p7zip-full
 imagemagick
 ffmpeg

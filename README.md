@@ -142,7 +142,7 @@ The recommended layout:
 |------|---------|
 | `~/.oh-my-zsh/custom/aliases.zsh` | All aliases (modern CLI replacements, update, etc.) |
 | `~/.oh-my-zsh/custom/env.zsh` | Environment variables, PATH additions, PATH dedup, `LANG`, plus Linux-only `XAUTHORITY` and `DOCKER_DEFAULT_PLATFORM` |
-| `~/.oh-my-zsh/custom/motd.zsh` | Dynamic MOTD display (Ubuntu Linux) |
+| `~/.oh-my-zsh/custom/motd.zsh` | Dynamic MOTD display (Ubuntu Linux only — do not create on macOS) |
 | `~/.oh-my-zsh/custom/zoxide.zsh` | zoxide init (`eval "$(zoxide init zsh)"`) |
 
 `~/.zshrc` itself should only contain:
@@ -185,6 +185,7 @@ fi
 ```zsh
 export PATH="$HOME/bin:$HOME/.local/bin:$HOME/.npm-global/bin:/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
 export LANG=zh_TW.UTF-8
+# Restrictive umask: no group/other access on new files (intentional security hardening)
 umask 0077
 
 # Linux-only environment
@@ -248,9 +249,33 @@ Package handling should explicitly support:
 - Homebrew on macOS
 - `apt` on Ubuntu Linux
 
+### Docker (Linux)
+
+On macOS, Docker is installed via Homebrew (`brew install docker`).
+
+On Ubuntu Linux, Docker should be installed from Docker's official `apt` repository (`docker-ce`), not the `docker.io` Ubuntu archive package. The AI agent should:
+
+1. Add Docker's official GPG key and repository if not already configured:
+
+```sh
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update
+```
+
+2. Install Docker CE packages:
+
+```sh
+sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+3. Skip if `docker --version` already reports a `docker-ce` installation.
+
 ### tldr (tealdeer)
 
-On Ubuntu Linux, after installing `tldr`, the AI agent should generate the default configi. ex. `tldr --seed-config` and update it so that only `zh_TW` and `en` languages are used:
+On Ubuntu Linux, after installing `tldr`, the AI agent should generate the default config. ex. `tldr --seed-config` and update it so that only `zh_TW` and `en` languages are used:
 
 ex. tealdeer config file
 ```toml
@@ -260,6 +285,10 @@ download_languages = ["zh_TW", "en"]
 [search]
 languages = ["zh_TW", "en"]
 ```
+
+### Node.js
+
+Node is installed via system packages (`brew install node` / `apt install nodejs`). This intentionally uses the system-provided version. If a project requires a specific Node version, use a version manager like `fnm` or `nvm` on a per-project basis — that is out of scope for this repo.
 
 ### npm
 
@@ -271,11 +300,13 @@ npm config set prefix '~/.npm-global'
 
 The PATH should include `~/.npm-global/bin` (covered in `env.zsh` above).
 
-### Proxmark3 (Iceman fork)
+### Proxmark3 (Iceman fork) — opt-in
 
-On macOS, `proxmark3` is installed via Homebrew.
+> **Note:** This section involves building from source on Linux and is heavier than typical shell configuration. The AI agent should only perform these steps when explicitly requested by the user.
 
-On Ubuntu Linux, the Iceman fork must be built from source. The AI agent should:
+On macOS, `proxmark3` is installed via Homebrew (handled by `packages.txt`).
+
+On Ubuntu Linux, the Iceman fork must be built from source. When requested, the AI agent should:
 
 1. Install build dependencies:
 
