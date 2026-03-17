@@ -122,12 +122,39 @@ The AI agent should ensure zsh as login shell:
 - sources the repo-managed environment file
 - keeps changes localized and identifiable
 
+### Oh My Zsh Plugins
+
+The AI agent should ensure the following Oh My Zsh plugins are enabled:
+
+```zsh
+plugins=(git zsh-autosuggestions zsh-syntax-highlighting fzf z)
+```
+
+- `zsh-autosuggestions` and `zsh-syntax-highlighting` are custom plugins and must be cloned into `$ZSH_CUSTOM/plugins/` if not already present.
+- `git`, `fzf`, and `z` are bundled with Oh My Zsh.
+
+### command-not-found
+
+On Ubuntu Linux, the AI agent should ensure the `command-not-found` handler is sourced in `~/.zshrc`:
+
+```zsh
+source /etc/zsh_command_not_found
+```
+
+This provides package suggestions when a user runs a command that is not installed.
+
 ### Aliases
 
 The AI agent should ensure the following aliases are available:
 
 ```zsh
-alias ll='ls -alFG'
+# Modern CLI replacements
+alias ls='eza --icons'
+alias ll='eza -la --icons --git'
+alias lt='eza --tree --icons'
+alias cat='batcat --paging=never'
+alias fd='fdfind'
+
 alias qrencode='qrencode -t ansiutf8 -r'
 
 # Platform-aware update alias 'u'
@@ -144,7 +171,7 @@ The AI agent should ensure the following environment settings are active:
 
 ```zsh
 export PATH="$HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
-export LANG=en_US.UTF-8
+export LANG=zh_TW.UTF-8
 umask 0077
 
 # Ensure Powerlevel10k config is sourced if it exists
@@ -153,12 +180,38 @@ umask 0077
 
 The AI agent should prefer placing these in a dedicated file (like `~/.aliases.zsh` and `~/.env.zsh`) and sourcing them from `~/.zshrc` to keep the main configuration clean.
 
+### zoxide
+
+The AI agent should ensure zoxide is initialized in `~/.zshrc`:
+
+```zsh
+eval "$(zoxide init zsh)"
+```
+
+This replaces the default `cd` workflow with a smarter directory jumper (used via the `z` command).
+
+### Dynamic MOTD
+
+On Ubuntu Linux, the AI agent should ensure `~/.zshrc` includes a guarded block that displays the dynamic MOTD on interactive shell start:
+
+```zsh
+# --- Display Dynamic MOTD for Zsh ---
+if [[ -x "/usr/bin/run-parts" ]] && [[ -d "/etc/update-motd.d" ]]; then
+    if [[ ! -f "$HOME/.hushlogin" ]]; then
+        /usr/bin/run-parts --lsbsysinit /etc/update-motd.d/ 2>/dev/null
+    fi
+fi
+# --- End Dynamic MOTD ---
+```
+
+This replicates the login MOTD behavior that zsh does not display by default. The block respects `~/.hushlogin` to allow suppression.
+
 ### Timezone and Locale
 
 The AI agent should ensure the machine is configured with the correct timezone and locale:
 
 - **Timezone:** Set to `Asia/Taipei`.
-- **Locale:** Ensure `en_US.UTF-8` and `en_GB.UTF-8` are generated, and `LANG` is set to `en_US.UTF-8`.
+- **Locale:** Ensure `en_US.UTF-8`, `en_GB.UTF-8`, and `zh_TW.UTF-8` are generated, and `LANG` is set to `zh_TW.UTF-8`.
 
 ### Packages
 

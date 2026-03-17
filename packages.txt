@@ -4,10 +4,12 @@
 
 # Common
 git
+gh
 zsh
 jq
 tmux
 qrencode
+glow
 
 # macOS only
 [mac] watch
