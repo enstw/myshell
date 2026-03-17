@@ -185,7 +185,7 @@ alias u='~/bin/update'
 The `u` alias delegates to `~/bin/update`. The AI agent should create this script with the following content:
 
 ```sh
-#!/bin/sh
+#!/usr/bin/env zsh
 set -e
 
 update_omz_custom() {
@@ -199,7 +199,9 @@ if [ "$(uname)" = "Darwin" ]; then
 else
     sudo apt update && sudo apt -y full-upgrade && sudo apt -y autoremove
     # Include snap refresh if snap is in use; remove otherwise
-    sudo snap refresh
+    if command -v snap >/dev/null 2>&1; then
+        sudo snap refresh
+    fi
 fi
 
 update_omz_custom
@@ -319,7 +321,7 @@ The `npm` package is listed in `packages.txt` and pulls in Node.js as a dependen
 The AI agent should ensure the npm global prefix is set to `~/.npm-global` so that globally installed packages do not require `sudo`:
 
 ```sh
-npm config set prefix '~/.npm-global'
+npm config set prefix "$HOME/.npm-global"
 ```
 
 The PATH should include `~/.npm-global/bin` (covered in `env.zsh` above).
