@@ -119,7 +119,6 @@ The AI agent should ensure zsh as login shell:
 
 - enables the required Oh My Zsh theme and plugins
 - loads Powerlevel10k in the normal supported way
-- sources the repo-managed environment file
 - keeps changes localized and identifiable
 
 ### Oh My Zsh Plugins
@@ -133,21 +132,27 @@ plugins=(git zsh-autosuggestions zsh-syntax-highlighting fzf z)
 - `zsh-autosuggestions` and `zsh-syntax-highlighting` are custom plugins and must be cloned into `$ZSH_CUSTOM/plugins/` if not already present.
 - `git`, `fzf`, and `z` are bundled with Oh My Zsh.
 
-### command-not-found
+### Configuration File Layout
 
-On Ubuntu Linux, the AI agent should ensure the `command-not-found` handler is sourced in `~/.zshrc`:
+Personal shell customization should be placed in `~/.oh-my-zsh/custom/` as individual `*.zsh` files. Oh My Zsh automatically sources all `*.zsh` files in this directory (alphabetically) during init, so no explicit `source` lines are needed in `~/.zshrc`.
 
-```zsh
-source /etc/zsh_command_not_found
-```
+The recommended layout:
 
-This provides package suggestions when a user runs a command that is not installed.
+| File | Purpose |
+|------|---------|
+| `~/.oh-my-zsh/custom/aliases.zsh` | All aliases (modern CLI replacements, update, etc.) |
+| `~/.oh-my-zsh/custom/env.zsh` | Environment variables, PATH additions, PATH dedup, `LANG`, `XAUTHORITY`, `DOCKER_DEFAULT_PLATFORM` |
+| `~/.oh-my-zsh/custom/motd.zsh` | Dynamic MOTD display (Ubuntu Linux) |
+| `~/.oh-my-zsh/custom/zoxide.zsh` | zoxide init (`eval "$(zoxide init zsh)"`) |
 
-### Aliases
+`~/.zshrc` itself should only contain:
 
-Aliases should be placed in `~/.oh-my-zsh/custom/aliases.zsh`. Oh My Zsh automatically sources all `*.zsh` files in the custom folder, so no explicit `source` line is needed in `~/.zshrc`.
+- Powerlevel10k instant prompt block (must be at the very top)
+- `ZSH_THEME`, `plugins=()`, and `source $ZSH/oh-my-zsh.sh` (core OMZ config)
+- `source /etc/zsh_command_not_found` (Ubuntu only, not all systems have it)
+- `[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh` (p10k convention, stays at bottom)
 
-The AI agent should ensure the following aliases are available in that file:
+### aliases.zsh
 
 ```zsh
 # Modern CLI replacements
@@ -170,24 +175,22 @@ else
 fi
 ```
 
-### Environment Variables
-
-The AI agent should ensure the following environment settings are active:
+### env.zsh
 
 ```zsh
-export PATH="$HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+export PATH="$HOME/bin:$HOME/.local/bin:$HOME/.npm-global/bin:/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
 export LANG=zh_TW.UTF-8
+export XAUTHORITY=$HOME/.Xauthority
 umask 0077
 
-# Ensure Powerlevel10k config is sourced if it exists
-[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+# Set Docker platform on ARM hosts
+[[ $(uname -m) == "aarch64" ]] && export DOCKER_DEFAULT_PLATFORM=linux/arm64
+
+# Deduplicate PATH
+export PATH="$(perl -e 'print join(":", grep { not $seen{$_}++ } split(/:/, $ENV{PATH}))')"
 ```
 
-The AI agent should prefer placing environment variables in a dedicated file (like `~/.env.zsh`) and sourcing it from `~/.zshrc` to keep the main configuration clean. Aliases belong in `~/.oh-my-zsh/custom/aliases.zsh` (see Aliases section above).
-
-### zoxide
-
-The AI agent should ensure zoxide is initialized in `~/.zshrc`:
+### zoxide.zsh
 
 ```zsh
 eval "$(zoxide init zsh)"
@@ -195,9 +198,9 @@ eval "$(zoxide init zsh)"
 
 This replaces the default `cd` workflow with a smarter directory jumper (used via the `z` command).
 
-### Dynamic MOTD
+### motd.zsh
 
-On Ubuntu Linux, the AI agent should ensure `~/.zshrc` includes a guarded block that displays the dynamic MOTD on interactive shell start:
+On Ubuntu Linux only:
 
 ```zsh
 # --- Display Dynamic MOTD for Zsh ---
@@ -210,6 +213,16 @@ fi
 ```
 
 This replicates the login MOTD behavior that zsh does not display by default. The block respects `~/.hushlogin` to allow suppression.
+
+### command-not-found
+
+On Ubuntu Linux, the AI agent should ensure the `command-not-found` handler is sourced in `~/.zshrc` (not in the custom folder, as not all systems have this file):
+
+```zsh
+source /etc/zsh_command_not_found
+```
+
+This provides package suggestions when a user runs a command that is not installed.
 
 ### Timezone and Locale
 
@@ -248,7 +261,7 @@ The AI agent should ensure `npm` is installed and its global prefix is set to `~
 npm config set prefix '~/.npm-global'
 ```
 
-The PATH should include `~/.npm-global/bin`. This should be added to `~/.zshrc` or the repo-managed environment file.
+The PATH should include `~/.npm-global/bin` (covered in `env.zsh` above).
 
 ### Proxmark3 (Iceman fork)
 
