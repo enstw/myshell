@@ -68,6 +68,7 @@ When configuring a machine from this repo, the AI agent should:
 7. Avoid interactive steps unless they are unavoidable.
 8. Avoid storing secrets, private keys, tokens, host-specific usernames, or personal machine paths in the repo.
 9. **Maintain a file named `~/.install.log`** to track each installation step, decision, and result. This allows subsequent agent sessions to pick up where the previous one left off and understand the current state.
+10. **Treat shell commands in this repo as intent, not literal scripts.** The commands shown are examples that illustrate the desired outcome. The AI agent should prefer the current official installation method (e.g. from upstream docs) over copying commands verbatim from this file, as they may become outdated. When deviating, log the difference in `~/.install.log`.
 
 ## Configuration Boundaries
 
