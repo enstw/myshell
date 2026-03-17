@@ -27,7 +27,7 @@ ripgrep
 tealdeer:tldr
 zoxide
 [mac] docker
-# Docker on Linux: installed via official docker-ce repo, see README Docker section
+# Docker on Ubuntu: installed via official docker-ce repo, see README Docker section
 p7zip:p7zip-full
 imagemagick
 ffmpeg

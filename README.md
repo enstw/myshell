@@ -142,7 +142,7 @@ The recommended layout:
 | File | Purpose |
 |------|---------|
 | `~/.oh-my-zsh/custom/aliases.zsh` | All aliases (modern CLI replacements, update, etc.) |
-| `~/.oh-my-zsh/custom/env.zsh` | Environment variables, PATH additions, PATH dedup, `LANG`, plus Linux-only `XAUTHORITY` and `DOCKER_DEFAULT_PLATFORM` |
+| `~/.oh-my-zsh/custom/env.zsh` | Environment variables, PATH additions, PATH dedup, `LANG`, plus Ubuntu-only `XAUTHORITY` and `DOCKER_DEFAULT_PLATFORM` |
 | `~/.oh-my-zsh/custom/motd.zsh` | Dynamic MOTD display (Ubuntu Linux only — do not create on macOS) |
 | `~/.oh-my-zsh/custom/zoxide.zsh` | zoxide init (`eval "$(zoxide init zsh)"`) |
 
@@ -191,7 +191,7 @@ export LANG=zh_TW.UTF-8
 # Restrictive umask: no group/other access on new files (intentional security hardening)
 umask 0077
 
-# Linux-only environment
+# Ubuntu-only environment
 if [[ "$(uname)" != "Darwin" ]]; then
     export XAUTHORITY=$HOME/.Xauthority
     # aarch64 Docker default (e.g. ARM VMs)
@@ -252,7 +252,7 @@ Package handling should explicitly support:
 - Homebrew on macOS
 - `apt` on Ubuntu Linux
 
-### Docker (Linux)
+### Docker (Ubuntu)
 
 On macOS, Docker is installed via Homebrew (`brew install docker`).
 
@@ -278,7 +278,7 @@ sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin dock
 
 ### tldr (tealdeer)
 
-After installing `tldr`, the AI agent should generate the default config via `tldr --seed-config` and update it so that only `zh_TW` and `en` languages are used. The config file path varies by platform — use `tldr --show-paths` to locate it (e.g. `~/.config/tealdeer/config.toml` on Linux, `~/Library/Application Support/tealdeer/config.toml` on macOS):
+After installing `tldr`, the AI agent should generate the default config via `tldr --seed-config` and update it so that only `zh_TW` and `en` languages are used. The config file path varies by platform — use `tldr --show-paths` to locate it (e.g. `~/.config/tealdeer/config.toml` on Ubuntu, `~/Library/Application Support/tealdeer/config.toml` on macOS):
 ```toml
 [updates]
 download_languages = ["zh_TW", "en"]
@@ -303,7 +303,7 @@ The PATH should include `~/.npm-global/bin` (covered in `env.zsh` above).
 
 ### Proxmark3 (Iceman fork) — opt-in
 
-> **Note:** This section involves building from source on Linux and is heavier than typical shell configuration. The AI agent should only perform these steps when explicitly requested by the user.
+> **Note:** This section involves building from source on Ubuntu and is heavier than typical shell configuration. The AI agent should only perform these steps when explicitly requested by the user.
 
 On macOS, `proxmark3` is installed via Homebrew (handled by `packages.txt`).
 
