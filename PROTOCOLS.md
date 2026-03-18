@@ -7,7 +7,7 @@ The goal of this project is to maintain a declarative environment state managed 
 - `layers/`: Modular configuration layers (e.g., `layers/zsh/`).
 - `specs/`: Declarative requirements for the system (`system.md`, `apps.md`, `binaries.md`).
 - `brain/`: The AI's operational instructions (`SKILL.md`).
-- `archive/`: **LEGACY STORAGE ONLY.** The AI operator MUST NOT read, source, or analyze files in this directory unless explicitly requested by the user. It is not part of the active state.
+- `.archive/`: **LEGACY STORAGE (GIT-IGNORED).** This directory contains frozen legacy state. The AI operator MUST NOT read or analyze files in this directory.
 
 ## High-Level Operator Directives
 
