@@ -1,26 +1,39 @@
-# shell-state
+# myshell
 
-A modular, AI-managed environment definition for macOS and Linux.
+Declarative shell environment for macOS and Ubuntu Linux, configured by an AI agent at runtime.
 
-## Philosophy
+## Goal
 
-This repository follows the **Environment-as-State** philosophy. It contains declarative specifications of the desired system state, which is maintained and converged by an AI operator (`shell-operator`).
+Define the desired shell state in small, readable files so any CLI AI agent can bring a machine into the preferred interactive environment — without a monolithic bootstrap script.
 
-## Getting Started
+## How It Works
 
-1. Clone this repository to `~/shell-state`.
-2. Open the directory with Gemini CLI.
-3. Refer to [PROTOCOLS.md](./PROTOCOLS.md) for the AI operational manual.
+1. Install a CLI AI agent.
+2. Start the agent from the **home directory** (`~`).
+3. Point it at this repo — the agent reads [SHELLSPEC.md](SHELLSPEC.md) and the package lists, then configures the machine.
 
-## Operator Directives
+Shell scripts are generated at runtime and removed after use. This repo holds **intent**, not automation artifacts.
 
-The AI can be given high-level directives to manage the environment:
-- **`Converge`**: Sync all packages, configs, and fonts to the defined state.
-- **`Capture`**: Snapshot the current system's live config back into this repo.
-- **`Drift`**: Compare the repo state with the active system and report differences.
+## Principles
 
-## Structure
+- **Declarative** — describe the desired end state, not step-by-step procedures.
+- **Idempotent** — safe to rerun at any time without duplicating config.
+- **Modular** — small, single-purpose files over one large script.
+- **Agent-agnostic** — works with any capable CLI AI agent.
+- **Platform-aware** — supports macOS (Homebrew) and Ubuntu Linux (apt).
 
-- `specs/`: Declarative requirements for system packages, apps, and binaries.
-- `layers/`: Modular configuration layers for shell components (e.g., zsh).
-- `brain/`: The operational "Skill" for Gemini CLI.
+## Repo Layout
+
+| File | Purpose |
+|------|---------|
+| `SHELLSPEC.md` | Full shell state specification (what the agent should configure) |
+| `packages.txt` | Cross-platform package list (`brew_name:apt_name`) |
+| `packages_cask.txt` | macOS cask packages |
+| `packages_curl.txt` | Packages installed via curl (Ubuntu only) |
+| `archive/` | Legacy files kept for reference — not used |
+
+## Scope
+
+**In scope:** shell startup, aliases, prompt/theme, plugins, packages for shell workflows, fonts, timezone/locale, small helper scripts.
+
+**Out of scope:** SSH keys, host naming, VM bootstrap, personal Git identity in tracked files.
