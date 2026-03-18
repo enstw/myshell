@@ -1,8 +1,14 @@
-alias ll='ls -alFG'
+alias ls='eza --icons'
+alias ll='eza -la --icons --git'
+alias lt='eza --tree --icons'
 alias qrencode='qrencode -t ansiutf8 -r'
+alias u='~/bin/update'
 
 if [[ "$(uname)" == "Darwin" ]]; then
-    alias u='brew autoremove && brew cleanup && brew update && brew upgrade -g && brew cleanup && brew autoremove && brew cleanup ; brew doctor ; find ~/.oh-my-zsh/custom/{plugins,themes} -mindepth 1 -maxdepth 1 -type d -exec git -C {} pull \; ; omz update'
+    alias cat='bat --paging=never'
 else
-    alias u='sudo apt update && sudo apt -y full-upgrade && sudo apt -y autoremove ; find ~/.oh-my-zsh/custom/{plugins,themes} -mindepth 1 -maxdepth 1 -type d -exec git -C {} pull \; ; omz update'
+    alias cat='batcat --paging=never'
+    alias fd='fdfind'
 fi
+
+alias upip='pip3 list -o --format=json | python3 -c "import sys,json;[print(p[\"name\"])for p in json.load(sys.stdin)]" | xargs -n1 pip3 install -U'
