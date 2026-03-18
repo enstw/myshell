@@ -97,7 +97,7 @@ The recommended layout:
 
 - `zinit` initialization block (typically at the top)
 - `zinit` plugin loading block
-- Custom config sourcing loop: `for f in ~/.zsh/*.zsh; do source $f; done`
+- Custom config sourcing loop: `for f in ~/.zsh/*.zsh(N); do source $f; done`
 - `[[ -f /etc/zsh_command_not_found ]] && source /etc/zsh_command_not_found` (Ubuntu only, guarded)
 - `eval "$(starship init zsh)"` (Starship initialization, stays at bottom)
 
@@ -134,8 +134,15 @@ The `u` alias delegates to `~/bin/update`. The AI agent should create this scrip
 set -e
 
 update_zinit() {
-    zinit self-update
-    zinit update --all
+    # Source zinit explicitly — it is not available in non-interactive scripts.
+    local zinit_home="${XDG_DATA_HOME:-$HOME/.local/share}/zinit/zinit.git"
+    if [[ -f "$zinit_home/zinit.zsh" ]]; then
+        source "$zinit_home/zinit.zsh"
+        zinit self-update
+        zinit update --all
+    else
+        echo "zinit not found at $zinit_home — skipping plugin update."
+    fi
 }
 
 if [ "$(uname)" = "Darwin" ]; then
@@ -226,7 +233,7 @@ Package handling should explicitly support:
 
 ## Docker (Ubuntu)
 
-On macOS, Docker is installed via Homebrew (`brew install docker`).
+On macOS, Docker is installed as a cask via Homebrew (`brew install --cask docker`), which provides Docker Desktop.
 
 On Ubuntu Linux, Docker should be installed from Docker's official `apt` repository (`docker-ce`), not the `docker.io` Ubuntu archive package. The AI agent should:
 
