@@ -1,0 +1,4 @@
+# Packages installed via curl (Ubuntu only)
+# Format: [ubuntu] name install_url
+# The agent should verify URLs against official sources before executing.
+[ubuntu] zed https://zed.dev/install.sh

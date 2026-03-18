@@ -1,0 +1,3 @@
+# macOS GUI apps (brew install --cask)
+docker
+zed

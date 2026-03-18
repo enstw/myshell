@@ -1,0 +1,33 @@
+# CLI packages — single source of truth
+# Format: package_name  or  brew_name:apt_name
+# Prefix: [mac] macOS only, [ubuntu] Ubuntu only
+
+# Common
+git
+gh
+zsh
+jq
+tmux
+qrencode
+glow
+npm
+fzf
+ripgrep
+zoxide
+starship
+p7zip:p7zip-full
+imagemagick
+ffmpeg
+
+# Cross-platform (different binary names)
+bat:batcat
+eza
+fd:fd-find
+tealdeer:tldr
+
+# macOS only
+[mac] watch
+[mac] proxmark3
+
+# Ubuntu only
+[ubuntu] build-essential

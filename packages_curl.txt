@@ -1,5 +1,0 @@
-# Packages installed via curl (Ubuntu only)
-# These are Ubuntu alternatives for packages that use `brew --cask` on macOS.
-# Format: [ubuntu] name install_url
-# Note: The agent should verify URLs against official sources before executing.
-[ubuntu] zed https://zed.dev/install.sh

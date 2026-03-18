@@ -10,9 +10,9 @@ Define the desired shell state in small, readable files so any CLI AI agent can 
 
 1. Install a CLI AI agent.
 2. Start the agent from the **home directory** (`~`).
-3. Point it at this repo — the agent reads [SHELLSPEC.md](SHELLSPEC.md) and the package lists, then configures the machine.
+3. Point it at this repo — the agent reads the specs and configures the machine.
 
-Shell scripts are generated at runtime and removed after use. This repo holds **intent**, not automation artifacts.
+Shell scripts are generated at runtime and removed after use. This repo holds **intent**, not artifacts.
 
 ## Principles
 
@@ -24,16 +24,16 @@ Shell scripts are generated at runtime and removed after use. This repo holds **
 
 ## Repo Layout
 
-| File | Purpose |
+| Path | Purpose |
 |------|---------|
-| `SHELLSPEC.md` | Full shell state specification (what the agent should configure) |
-| `packages.txt` | Cross-platform package list (`brew_name:apt_name`) |
-| `packages_cask.txt` | macOS cask packages |
-| `packages_curl.txt` | Packages installed via curl (Ubuntu only) |
-| `archive/` | Legacy files kept for reference — not used |
+| `AGENT.md` | AI operator protocols and working rules |
+| `spec/shell.md` | Full shell state specification |
+| `spec/packages.txt` | CLI packages (`brew_name:apt_name`) |
+| `spec/casks.txt` | macOS GUI apps (brew cask) |
+| `spec/scripts.txt` | Packages installed via curl (Ubuntu) |
 
 ## Scope
 
-**In scope:** shell startup, aliases, prompt/theme, plugins, packages for shell workflows, fonts, timezone/locale, small helper scripts.
+**In scope:** shell startup, aliases, prompt/theme, plugins, packages, fonts, timezone/locale, helper scripts.
 
 **Out of scope:** SSH keys, host naming, VM bootstrap, personal Git identity in tracked files.
