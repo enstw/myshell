@@ -23,7 +23,7 @@ Bring the host system into alignment with the repo state.
 
 1. **Install packages** — parse `spec/packages.txt` using `brew` (macOS) or `apt` (Ubuntu). Parse `spec/casks.txt` with `brew install --cask` (macOS). Parse `spec/scripts.txt` for curl-based installs (Ubuntu).
 2. **Configure shell** — generate files defined in `spec/shell.md` and place them at their target paths. Initialize zinit, starship, and plugins.
-3. **Install fonts** — fetch the latest `.ttf` from `https://api.github.com/repos/enstw/font/releases/latest`. Install to `~/Library/Fonts/` (macOS) or `~/.local/share/fonts/` (Ubuntu, then `fc-cache -f`).
+3. **Install fonts** — fetch the latest `.ttf` from `https://ent.tw/font`. Install to `~/Library/Fonts/` (macOS) or `~/.local/share/fonts/` (Ubuntu, then `fc-cache -f`).
 4. **Set timezone/locale** — apply settings from `spec/shell.md`.
 
 **Outcome:** all specs applied, `~/.zshrc` and `~/.zsh/` are in the target state.

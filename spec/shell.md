@@ -78,8 +78,8 @@ else
     alias fd='fdfind'
 fi
 
-# Upgrade all outdated pip packages
-alias upip='pip3 list -o --format=json | python3 -c "import sys,json;[print(p[\"name\"])for p in json.load(sys.stdin)]" | xargs -n1 pip3 install -U'
+# Upgrade all outdated pip packages (user-only to avoid breaking system packages)
+alias upip='pip3 list -o --user --format=json | python3 -c "import sys,json;[print(p[\"name\"])for p in json.load(sys.stdin)]" | xargs -n1 pip3 install --user -U'
 
 # System update (delegates to ~/bin/update)
 alias u='~/bin/update'
@@ -139,7 +139,7 @@ update_zinit() {
 }
 
 if [ "$(uname)" = "Darwin" ]; then
-    brew update && brew upgrade -g
+    brew update && brew upgrade
     brew autoremove && brew cleanup
     brew doctor
 else
@@ -210,7 +210,7 @@ cd ~/proxmark3 && make clean && make -j$(nproc) && sudo make install
 
 ## Fonts
 
-Ensure a Nerd Font is installed for prompt rendering (e.g., FiraCode Nerd Font). Starship works best with Nerd Fonts.
+Fetch the latest `.ttf` files from `https://ent.tw/font` (redirects to the GitHub releases API). Install to `~/Library/Fonts/` (macOS) or `~/.local/share/fonts/` (Ubuntu, then run `fc-cache -f`). Starship works best with Nerd Fonts.
 
 ## Acceptance Criteria
 

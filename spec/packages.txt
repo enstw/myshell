@@ -14,7 +14,7 @@ npm
 fzf
 ripgrep
 zoxide
-starship
+[mac] starship
 p7zip:p7zip-full
 imagemagick
 ffmpeg
@@ -23,7 +23,7 @@ ffmpeg
 bat:batcat
 eza
 fd:fd-find
-tealdeer:tldr
+[mac] tealdeer
 
 # macOS only
 [mac] watch
