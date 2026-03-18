@@ -21,9 +21,9 @@ This file contains everything an AI agent needs to manage this shell environment
 
 Bring the host system into alignment with the repo state.
 
-1. **Install apps** — parse `spec/apps.txt` and discover the current best way to install each app on the current platform. Check official project documentation for the recommended method. Verify the correct binary is present after install. See `spec/shell.md` for app-specific constraints.
+1. **Install apps** — parse `spec/apps.txt` and discover the current best way to install each app on the current platform. Check official project documentation for the recommended method. Check `spec/constraints.md` for app-specific requirements before installing. Verify the correct binary is present after install.
 2. **Configure shell** — generate files defined in `spec/shell.md` and place them at their target paths. Initialize zinit, starship, and plugins.
-3. **Install fonts** — fetch the latest `.ttf` from `https://ent.tw/font`. Install to `~/Library/Fonts/` (macOS) or `~/.local/share/fonts/` (Ubuntu, then `fc-cache -f`).
+3. **Install fonts** — see `spec/constraints.md` for font source and install locations.
 4. **Set timezone/locale** — apply settings from `spec/shell.md`.
 
 **Outcome:** all specs applied, `~/.zshrc` and `~/.zsh/` are in the target state.
@@ -47,6 +47,18 @@ Report differences without making changes.
 3. Diff active shell files against spec definitions.
 
 **Outcome:** a drift report detailing what is missing or different.
+
+### Verify
+
+Confirm the environment works after Converge.
+
+1. Open a new shell (or `exec zsh`) and check for errors on startup.
+2. Confirm the starship prompt renders correctly.
+3. Confirm all aliases from `spec/shell.md` resolve to valid binaries.
+4. Confirm all apps from `spec/apps.txt` are in PATH.
+5. Run `zinit list` and confirm expected plugins are loaded.
+
+**Outcome:** a pass/fail report. Log failures in `~/.install.log`.
 
 ## App List Format
 

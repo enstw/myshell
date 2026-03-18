@@ -1,6 +1,6 @@
 # Shell State Specification
 
-This file defines the exact desired shell state. The AI agent reads this file and the package lists, then configures the machine accordingly.
+This file defines the desired shell state. The AI agent reads this file, `apps.txt`, and `constraints.md`, then configures the machine accordingly.
 
 ## zsh
 
@@ -57,45 +57,27 @@ eval "$(starship init zsh)"
 
 ### aliases.zsh
 
-```zsh
-# Modern CLI replacements
-alias ls='eza --icons'
-alias ll='eza -la --icons --git'
-alias lt='eza --tree --icons'
-alias qrencode='qrencode -t ansiutf8 -r'
+The agent generates this file during Converge. Alias targets must match the actual binary names present after install (see `spec/constraints.md` for bat/fd).
 
-# Platform-aware aliases (Ubuntu uses different binary names)
-if [[ "$(uname)" == "Darwin" ]]; then
-    alias cat='bat --paging=never'
-else
-    alias cat='batcat --paging=never'
-    alias fd='fdfind'
-fi
-
-# Upgrade all outdated pip packages (user-only to avoid breaking system packages)
-alias upip='pip3 list -o --user --format=json | python3 -c "import sys,json;[print(p[\"name\"])for p in json.load(sys.stdin)]" | xargs -n1 pip3 install --user -U'
-
-# System update (delegates to ~/bin/update)
-alias u='~/bin/update'
-```
+| Alias | Target | Notes |
+|-------|--------|-------|
+| `ls` | `eza --icons` | |
+| `ll` | `eza -la --icons --git` | |
+| `lt` | `eza --tree --icons` | |
+| `cat` | `bat --paging=never` | binary may be `batcat` — see constraints |
+| `fd` | `fd` | binary may be `fdfind` — see constraints |
+| `qrencode` | `qrencode -t ansiutf8 -r` | |
+| `upip` | upgrade all outdated pip packages | user-only (`--user`) to avoid breaking system packages |
+| `u` | `~/bin/update` | |
 
 ### env.zsh
 
-```zsh
-export PATH="$HOME/bin:$HOME/.local/bin:$HOME/.npm-global/bin:/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
-export LANG=zh_TW.UTF-8
-# Restrictive umask: no group/other access on new files
-umask 0077
+The agent generates this file during Converge based on what is actually installed.
 
-# Ubuntu-only environment
-if [[ "$(uname)" != "Darwin" ]]; then
-    export XAUTHORITY=$HOME/.Xauthority
-    [[ $(uname -m) == "aarch64" ]] && export DOCKER_DEFAULT_PLATFORM=linux/arm64
-fi
-
-# Deduplicate PATH
-export PATH="$(perl -e 'print join(":", grep { not $seen{$_}++ } split(/:/, $ENV{PATH}))')"
-```
+- **PATH** must include directories for: user scripts (`~/bin`), user-local binaries (`~/.local/bin`), npm global, and Homebrew (if on macOS). Only add directories that exist. Deduplicate PATH.
+- **LANG:** `zh_TW.UTF-8`
+- **umask:** `0077` (no group/other access on new files)
+- **Ubuntu-only:** set `XAUTHORITY=$HOME/.Xauthority`. On aarch64, set `DOCKER_DEFAULT_PLATFORM=linux/arm64`.
 
 ### zoxide.zsh
 
@@ -115,62 +97,18 @@ fi
 
 ## ~/bin/update
 
-The `u` alias delegates to this script. Create it with `chmod +x`:
+The `u` alias delegates to this script. The agent generates it during Converge with `chmod +x`, based on what is actually installed on the machine.
 
-```sh
-#!/usr/bin/env zsh
-set -e
-
-update_zinit() {
-    local zinit_home="${XDG_DATA_HOME:-$HOME/.local/share}/zinit/zinit.git"
-    if [[ -f "$zinit_home/zinit.zsh" ]]; then
-        source "$zinit_home/zinit.zsh"
-        zinit self-update
-        zinit update --all
-    else
-        echo "zinit not found at $zinit_home — skipping plugin update."
-    fi
-}
-
-if [ "$(uname)" = "Darwin" ]; then
-    brew update && brew upgrade
-    brew autoremove && brew cleanup
-    brew doctor
-else
-    sudo apt update && sudo apt -y full-upgrade && sudo apt -y autoremove
-    if command -v snap >/dev/null 2>&1; then
-        sudo snap refresh
-    fi
-fi
-
-update_zinit
-```
+**Intent:** update all installed package managers (Homebrew, apt, snap, etc.), clean up unused packages, and update zinit and all its plugins. Do not use `brew upgrade --greedy`.
 
 ## Timezone and Locale
 
 - **Timezone:** `Asia/Taipei`
 - **Locale:** Generate `en_US.UTF-8`, `en_GB.UTF-8`, `zh_TW.UTF-8`. Set `LANG=zh_TW.UTF-8`.
 
-## npm
+## App-specific configuration
 
-Set the global prefix so globally installed packages do not require sudo. PATH includes `~/.npm-global/bin` (covered in env.zsh).
-
-## tldr (tealdeer)
-
-After installing, configure tealdeer to download and search in `zh_TW` and `en` languages.
-
-## Docker
-
-- **macOS:** Docker Desktop (GUI).
-- **Ubuntu:** must be `docker-ce` from Docker's official repository, not the `docker.io` snap/apt package.
-
-## Proxmark3 (opt-in)
-
-Only install when explicitly requested. Use the RRG/Iceman fork.
-
-## Fonts
-
-Fetch the latest `.ttf` files from `https://ent.tw/font` (redirects to the GitHub releases API). Install to `~/Library/Fonts/` (macOS) or `~/.local/share/fonts/` (Ubuntu, then run `fc-cache -f`). Starship works best with Nerd Fonts.
+See `spec/constraints.md` for install requirements and post-install configuration of individual apps (Docker, tealdeer, npm, Proxmark3, fonts, bat, fd).
 
 ## Acceptance Criteria
 
