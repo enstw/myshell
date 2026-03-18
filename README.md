@@ -28,9 +28,7 @@ Shell scripts are generated at runtime and removed after use. This repo holds **
 |------|---------|
 | `AGENT.md` | AI operator protocols and working rules |
 | `spec/shell.md` | Full shell state specification |
-| `spec/packages.txt` | CLI packages (`brew_name:apt_name`) |
-| `spec/casks.txt` | macOS GUI apps (brew cask) |
-| `spec/scripts.txt` | Packages installed via curl (Ubuntu) |
+| `spec/apps.txt` | Desired applications (agent resolves install method) |
 
 ## Scope
 

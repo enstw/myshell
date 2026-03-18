@@ -1,0 +1,36 @@
+# Desired applications
+# The agent resolves the best install method per platform.
+# Optional notes after # help the agent pick the right package.
+# Prefix: [mac] macOS only, [ubuntu] Ubuntu only
+
+# Core tools
+git
+gh                      # GitHub CLI
+zsh
+jq
+tmux
+node                    # includes npm
+fzf
+ripgrep
+p7zip
+imagemagick
+ffmpeg
+
+# Modern CLI replacements
+bat                     # cat replacement
+eza                     # modern ls
+fd                      # modern find
+zoxide                  # smart cd
+starship                # cross-shell prompt
+tealdeer                # tldr client — must be the Rust tealdeer, not the Python tldr
+glow                    # terminal markdown renderer
+qrencode
+
+# GUI / desktop
+docker                  # Docker Desktop on macOS, docker-ce on Ubuntu
+zed                     # code editor
+
+# Platform-specific
+[mac] watch
+[mac] proxmark3
+[ubuntu] build-essential

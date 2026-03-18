@@ -21,7 +21,7 @@ This file contains everything an AI agent needs to manage this shell environment
 
 Bring the host system into alignment with the repo state.
 
-1. **Install packages** — parse `spec/packages.txt` using `brew` (macOS) or `apt` (Ubuntu). Parse `spec/casks.txt` with `brew install --cask` (macOS). Parse `spec/scripts.txt` for curl-based installs (Ubuntu).
+1. **Install apps** — parse `spec/apps.txt` and resolve the best install method for each app on the current platform. Prefer: native package manager > official install script > binary release > build from source. Verify the correct binary is present after install (e.g., tealdeer not python-tldr, docker-ce not docker.io). See `spec/shell.md` for app-specific install notes.
 2. **Configure shell** — generate files defined in `spec/shell.md` and place them at their target paths. Initialize zinit, starship, and plugins.
 3. **Install fonts** — fetch the latest `.ttf` from `https://ent.tw/font`. Install to `~/Library/Fonts/` (macOS) or `~/.local/share/fonts/` (Ubuntu, then `fc-cache -f`).
 4. **Set timezone/locale** — apply settings from `spec/shell.md`.
@@ -33,7 +33,7 @@ Bring the host system into alignment with the repo state.
 Extract the current system state into the repo.
 
 1. Compare `~/.zsh/` files with the spec definitions in `spec/shell.md`.
-2. Detect manually installed packages and suggest additions to `spec/packages.txt`.
+2. Detect manually installed packages and suggest additions to `spec/apps.txt`.
 3. Propose updates to spec files where the live system has diverged.
 
 **Outcome:** the repo becomes the source of truth for the active environment.
@@ -48,32 +48,20 @@ Report differences without making changes.
 
 **Outcome:** a drift report detailing what is missing or different.
 
-## Package File Formats
+## App List Format
 
-### packages.txt
-
-```
-package_name
-brew_name:apt_name
-[mac] package_name
-[ubuntu] package_name
-```
-
-- Common packages: install on all platforms.
-- `brew_name:apt_name`: use the first name for Homebrew, second for apt.
-- `[mac]`/`[ubuntu]` prefix: platform-specific.
-
-### casks.txt
-
-One package per line. macOS only (`brew install --cask`).
-
-### scripts.txt
+### apps.txt
 
 ```
-[ubuntu] name install_url
+app_name                # optional description / disambiguation
+[mac] app_name          # macOS only
+[ubuntu] app_name       # Ubuntu only
 ```
 
-Before executing: download to a temp file, inspect, execute, remove. Verify the binary is available afterward. Log in `~/.install.log`.
+- One app per line. Comments after `#` provide hints to the agent (e.g., which variant to install).
+- The agent determines the correct package name and install method per platform.
+- Install priority: native package manager > official install script > binary release > build from source.
+- After install, verify the expected binary is available and log the result.
 
 ## Install Log
 

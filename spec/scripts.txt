@@ -1,7 +1,0 @@
-# Packages installed via curl (Ubuntu only)
-# Format: [ubuntu] name install_url
-# URL may be a shell script (pipe to sh) or a releases page (download the appropriate binary to ~/.local/bin/).
-# The agent should verify URLs against official sources before executing.
-[ubuntu] starship https://starship.rs/install.sh
-[ubuntu] tealdeer https://github.com/tealdeer-rs/tealdeer/releases/latest
-[ubuntu] zed https://zed.dev/install.sh

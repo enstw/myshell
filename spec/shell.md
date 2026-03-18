@@ -181,7 +181,7 @@ languages = ["zh_TW", "en"]
 
 ## Docker
 
-- **macOS:** installed as a cask (`spec/casks.txt`).
+- **macOS:** install as a cask (Docker Desktop).
 - **Ubuntu:** install from Docker's official apt repository (`docker-ce`), not `docker.io`:
 
 ```sh
@@ -199,7 +199,7 @@ Skip if `docker --version` already reports `docker-ce`.
 
 Only perform when explicitly requested.
 
-- **macOS:** installed via Homebrew (`spec/packages.txt`).
+- **macOS:** install via Homebrew.
 - **Ubuntu:** build from source:
 
 ```sh
