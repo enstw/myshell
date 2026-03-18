@@ -17,8 +17,8 @@ An AI agent should be able to use this repository to bring a macOS or Ubuntu Lin
 The shell experience should include:
 
 - `zsh` as the interactive shell
-- Oh My Zsh installed
-- `powerlevel10k` as the prompt theme
+- `zinit` installed (plugin manager)
+- `starship` as the prompt theme
 - preferred plugins enabled
 - repo-managed aliases loaded
 - repo-managed environment variables loaded
@@ -120,41 +120,57 @@ The preferred implementation model is not:
 
 The AI agent should ensure zsh as login shell:
 
-- enables the required Oh My Zsh theme and plugins
-- loads Powerlevel10k in the normal supported way
+- installs and initializes `zinit` for plugin management
+- initializes `starship` in the normal supported way
 - keeps changes localized and identifiable
 
-### Oh My Zsh Plugins
+### zinit
 
-The AI agent should ensure the following Oh My Zsh plugins are enabled:
+The AI agent should install `zinit` if not already present:
 
-```zsh
-plugins=(git zsh-autosuggestions zsh-syntax-highlighting fzf)
+```sh
+bash -c "$(curl --fail --show-error --silent --location https://raw.githubusercontent.com/zdharma-continuum/zinit/HEAD/scripts/install.sh)"
 ```
 
-- `zsh-autosuggestions` and `zsh-syntax-highlighting` are custom plugins and must be cloned into `$ZSH_CUSTOM/plugins/` if not already present.
-- `git` and `fzf` are bundled with Oh My Zsh.
-- The bundled `z` plugin is intentionally omitted because `zoxide` (loaded via `zoxide.zsh`) supersedes it.
+### zinit Plugins
+
+The AI agent should ensure the following plugins are enabled via `zinit` in `~/.zshrc`:
+
+```zsh
+# Load Oh My Zsh library for git support
+zinit snippet OMZL::git.zsh
+
+# Load plugins
+zinit snippet OMZP::git
+zinit snippet OMZP::fzf
+zinit light zsh-users/zsh-autosuggestions
+zinit light zdharma-continuum/fast-syntax-highlighting
+zinit light zsh-users/zsh-completions
+```
+
+- `fzf` is a standard plugin.
+- `zsh-autosuggestions`, `fast-syntax-highlighting`, and `zsh-completions` are high-performance alternatives managed by `zinit`.
 
 ### Configuration File Layout
 
-Personal shell customization should be placed in `~/.oh-my-zsh/custom/` as individual `*.zsh` files. Oh My Zsh automatically sources all `*.zsh` files in this directory (alphabetically) during init, so no explicit `source` lines are needed in `~/.zshrc`.
+Personal shell customization should be placed in `~/.zsh/` as individual `*.zsh` files. These should be sourced manually in `~/.zshrc` since we are no longer using Oh My Zsh's automatic sourcing.
 
 The recommended layout:
 
 | File | Purpose |
 |------|---------|
-| `~/.oh-my-zsh/custom/aliases.zsh` | All aliases (modern CLI replacements, update, etc.) |
-| `~/.oh-my-zsh/custom/env.zsh` | Environment variables, PATH additions, PATH dedup, `LANG`, plus Ubuntu-only `XAUTHORITY` and `DOCKER_DEFAULT_PLATFORM` |
-| `~/.oh-my-zsh/custom/motd.zsh` | Dynamic MOTD display (Ubuntu Linux only — do not create on macOS) |
-| `~/.oh-my-zsh/custom/zoxide.zsh` | zoxide init (`eval "$(zoxide init zsh)"`) |
+| `~/.zsh/aliases.zsh` | All aliases (modern CLI replacements, update, etc.) |
+| `~/.zsh/env.zsh` | Environment variables, PATH additions, PATH dedup, `LANG`, plus Ubuntu-only `XAUTHORITY` and `DOCKER_DEFAULT_PLATFORM` |
+| `~/.zsh/motd.zsh` | Dynamic MOTD display (Ubuntu Linux only — do not create on macOS) |
+| `~/.zsh/zoxide.zsh` | zoxide init (`eval "$(zoxide init zsh)"`) |
 
 `~/.zshrc` itself should only contain:
 
-- Powerlevel10k instant prompt block (must be at the very top)
-- `ZSH_THEME`, `plugins=()`, and `source $ZSH/oh-my-zsh.sh` (core OMZ config)
+- `zinit` initialization block (typically at the top)
+- `zinit` plugin loading block
+- Custom config sourcing loop: `for f in ~/.zsh/*.zsh; do source $f; done`
 - `[[ -f /etc/zsh_command_not_found ]] && source /etc/zsh_command_not_found` (Ubuntu only, guarded)
-- `[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh` (p10k convention, stays at bottom)
+- `eval "$(starship init zsh)"` (Starship initialization, stays at bottom)
 
 ### aliases.zsh
 
@@ -188,8 +204,9 @@ The `u` alias delegates to `~/bin/update`. The AI agent should create this scrip
 #!/usr/bin/env zsh
 set -e
 
-update_omz_custom() {
-    find ~/.oh-my-zsh/custom/{plugins,themes} -mindepth 1 -maxdepth 1 -type d -exec git -C {} pull \;
+update_zinit() {
+    zinit self-update
+    zinit update --all
 }
 
 if [ "$(uname)" = "Darwin" ]; then
@@ -204,8 +221,7 @@ else
     fi
 fi
 
-update_omz_custom
-omz update
+update_zinit
 ```
 
 The script should be executable (`chmod +x ~/bin/update`). `~/bin` is already on PATH via `env.zsh`.
@@ -356,13 +372,13 @@ sudo make install
 
 4. Ensure the install is idempotent: skip if `pm3` is already available and up to date.
 
-### Powerlevel10k Configuration
+### Starship Configuration
 
-After Oh My Zsh and Powerlevel10k are installed, the user should run `p10k configure` interactively to generate `~/.p10k.zsh`. This is a one-time manual step — the wizard requires visual feedback to choose prompt styles. The AI agent should **not** attempt to run or automate this wizard.
+After Starship is installed, the prompt is automatically configured by initializing it in zsh. Custom configuration can be managed via `~/.config/starship.toml`. The AI agent should ensure Starship is initialized at the end of `~/.zshrc`.
 
 ### Fonts
 
-The AI agent should ensure a Nerd Font or the configured prompt font is installed when needed for prompt rendering.
+The AI agent should ensure a Nerd Font or the configured prompt font is installed when needed for prompt rendering. Starship works best with Nerd Fonts (e.g., FiraCode Nerd Font).
 
 ## Acceptance Criteria
 

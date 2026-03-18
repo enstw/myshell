@@ -26,6 +26,7 @@ fzf
 ripgrep
 tealdeer:tldr
 zoxide
+starship
 # Docker on macOS: installed as a cask (see packages_cask.txt)
 # Docker on Ubuntu: installed via official docker-ce repo (see README Docker section)
 p7zip:p7zip-full
