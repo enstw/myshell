@@ -7,6 +7,11 @@ description: Orchestrates and maintains the 'shell-state' environment. Use to 'C
 
 This skill enables the AI to act as a declarative operator for the 'shell-state' environment.
 
+## ⚠️ CRITICAL CONSTRAINT: THE ARCHIVE
+- **DO NOT READ `archive/`**: The AI is strictly forbidden from reading or using content inside the `archive/` directory for any workflow. 
+- **Legacy Only**: That directory contains outdated configurations (Oh-My-Zsh, p10k) that will contaminate the current state.
+- **Source of Truth**: Always use `layers/` and `specs/` as the only sources of truth.
+
 ## Workflow: `Converge` (The Sync Task)
 Bring the host machine into alignment with the repository:
 1.  **System Synchronization:**
