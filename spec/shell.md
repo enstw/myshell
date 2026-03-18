@@ -8,13 +8,7 @@ Ensure zsh is the login shell.
 
 ### zinit
 
-Install zinit if not present:
-
-```sh
-bash -c "$(curl --fail --show-error --silent --location https://raw.githubusercontent.com/zdharma-continuum/zinit/HEAD/scripts/install.sh)"
-```
-
-Load these plugins in `~/.zshrc`:
+Install zinit if not present. Load these plugins in `~/.zshrc`:
 
 ```zsh
 zinit snippet OMZL::git.zsh
@@ -159,54 +153,20 @@ update_zinit
 
 ## npm
 
-Set the global prefix so globally installed packages do not require sudo:
-
-```sh
-npm config set prefix "$HOME/.npm-global"
-```
-
-PATH includes `~/.npm-global/bin` (covered in env.zsh).
+Set the global prefix so globally installed packages do not require sudo. PATH includes `~/.npm-global/bin` (covered in env.zsh).
 
 ## tldr (tealdeer)
 
-After installing, run `tldr --seed-config` and update the config (use `tldr --show-paths` to locate it):
-
-```toml
-[updates]
-download_languages = ["zh_TW", "en"]
-
-[search]
-languages = ["zh_TW", "en"]
-```
+After installing, configure tealdeer to download and search in `zh_TW` and `en` languages.
 
 ## Docker
 
-- **macOS:** install as a cask (Docker Desktop).
-- **Ubuntu:** install from Docker's official apt repository (`docker-ce`), not `docker.io`:
-
-```sh
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt update
-sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-```
-
-Skip if `docker --version` already reports `docker-ce`.
+- **macOS:** Docker Desktop (GUI).
+- **Ubuntu:** must be `docker-ce` from Docker's official repository, not the `docker.io` snap/apt package.
 
 ## Proxmark3 (opt-in)
 
-Only perform when explicitly requested.
-
-- **macOS:** install via Homebrew.
-- **Ubuntu:** build from source:
-
-```sh
-sudo apt install git ca-certificates build-essential pkg-config libreadline-dev gcc-arm-none-eabi libnewlib-dev libbz2-dev libssl-dev
-git clone https://github.com/RfidResearchGroup/proxmark3.git ~/proxmark3
-cd ~/proxmark3 && make clean && make -j$(nproc) && sudo make install
-```
+Only install when explicitly requested. Use the RRG/Iceman fork.
 
 ## Fonts
 

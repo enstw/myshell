@@ -12,7 +12,7 @@ This file contains everything an AI agent needs to manage this shell environment
 6. Avoid interactive steps.
 7. Avoid storing secrets or personal data in the repo.
 8. Maintain `~/.install.log` using the format in [Install Log](#install-log).
-9. Treat shell commands in spec files as **intent**, not literal scripts — prefer official install methods.
+9. Treat spec files as **intent**, not literal scripts — discover the current best way to install each app rather than following hardcoded commands.
 10. Generate shell scripts at runtime and remove them after use.
 
 ## Operator Protocols
@@ -21,7 +21,7 @@ This file contains everything an AI agent needs to manage this shell environment
 
 Bring the host system into alignment with the repo state.
 
-1. **Install apps** — parse `spec/apps.txt` and resolve the best install method for each app on the current platform. Prefer: native package manager > official install script > binary release > build from source. Verify the correct binary is present after install (e.g., tealdeer not python-tldr, docker-ce not docker.io). See `spec/shell.md` for app-specific install notes.
+1. **Install apps** — parse `spec/apps.txt` and discover the current best way to install each app on the current platform. Check official project documentation for the recommended method. Verify the correct binary is present after install. See `spec/shell.md` for app-specific constraints.
 2. **Configure shell** — generate files defined in `spec/shell.md` and place them at their target paths. Initialize zinit, starship, and plugins.
 3. **Install fonts** — fetch the latest `.ttf` from `https://ent.tw/font`. Install to `~/Library/Fonts/` (macOS) or `~/.local/share/fonts/` (Ubuntu, then `fc-cache -f`).
 4. **Set timezone/locale** — apply settings from `spec/shell.md`.
@@ -58,9 +58,9 @@ app_name                # optional description / disambiguation
 [ubuntu] app_name       # Ubuntu only
 ```
 
-- One app per line. Comments after `#` provide hints to the agent (e.g., which variant to install).
-- The agent determines the correct package name and install method per platform.
-- Install priority: native package manager > official install script > binary release > build from source.
+- One app per line. Comments after `#` provide hints (e.g., which variant to install).
+- The agent discovers the current recommended install method per platform by consulting official project docs.
+- Do not assume a fixed install priority — newer tools may offer better methods than the traditional package manager.
 - After install, verify the expected binary is available and log the result.
 
 ## Install Log
