@@ -27,7 +27,7 @@ Initialize at the bottom of `~/.zshrc`:
 eval "$(starship init zsh)"
 ```
 
-Use built-in defaults. Do not create `~/.config/starship.toml` unless explicitly requested.
+Deploy `spec/starship-myshell.toml` to `~/.config/starship.toml`. This preset uses Nerd Font symbols and a powerline-style prompt with time, directory, and git segments.
 
 ## File Layout
 

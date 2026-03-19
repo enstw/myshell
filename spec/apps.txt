@@ -29,6 +29,7 @@ qrencode
 # GUI / desktop
 docker                  # Docker Desktop on macOS, docker-ce on Ubuntu
 zed                     # code editor
+wezterm                 # terminal emulator
 
 # Platform-specific
 [mac] watch
