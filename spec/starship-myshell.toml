@@ -50,15 +50,26 @@ symbol = " "
 
 [fossil_branch]
 symbol = " "
+format = "於 [$symbol$branch]($style) "
 
 [gcloud]
 symbol = " "
 
 [git_branch]
 symbol = " "
+format = "於 [$symbol$branch(:$remote_branch)]($style) "
 
 [git_commit]
 tag_symbol = '  '
+
+[git_state]
+rebase = "重基"
+merge = "合併"
+revert = "復原"
+cherry_pick = "摘取"
+bisect = "二分"
+am = "郵補"
+am_or_rebase = "郵補/重基"
 
 [golang]
 symbol = " "
@@ -77,6 +88,7 @@ symbol = " "
 
 [hg_branch]
 symbol = " "
+format = "於 [$symbol$branch]($style) "
 
 [hostname]
 ssh_symbol = " "
@@ -164,6 +176,7 @@ Zorin = " "
 
 [package]
 symbol = "󰏗 "
+format = "為 [$symbol$version]($style) "
 
 [perl]
 symbol = " "
@@ -205,7 +218,7 @@ symbol = " "
 symbol = " "
 
 [git_status]
-conflicted = "觝"
+conflicted = "牴"
 ahead = "先"
 behind = "後"
 modified = "異"
