@@ -15,6 +15,15 @@ This file contains everything an AI agent needs to manage this shell environment
 9. Treat spec files as **intent**, not literal scripts — discover the current best way to install each app rather than following hardcoded commands.
 10. Generate shell scripts at runtime and remove them after use.
 
+## Getting Started
+
+After reading the project files, present the user with the available protocols and ask which one to run:
+
+- **Converge** — install apps and apply all shell configuration
+- **Capture** — extract the current system state back into the repo
+- **Drift** — report differences without making changes
+- **Verify** — confirm the environment works correctly
+
 ## Operator Protocols
 
 ### Converge
