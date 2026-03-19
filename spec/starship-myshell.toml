@@ -46,9 +46,9 @@ symbol = " "
 symbol = " "
 
 [directory]
-format = "[ ﱮ $path ]($style)"
+format = "[ 在 󰉋 $path ]($style)"
 style = "fg:#E4E4E4 bg:#3B76F0"
-read_only = " 󰌾"
+read_only = " 唯讀 󰌾"
 
 [docker_context]
 symbol = " "
@@ -72,7 +72,7 @@ symbol = " "
 symbol = " "
 
 [git_branch]
-format = '[ $symbol$branch(:$remote_branch) ]($style)'
+format = '[ 於 $symbol$branch(:$remote_branch) ]($style)'
 symbol = "  "
 style = "fg:#1C3A5E bg:#FCF392"
 
@@ -235,7 +235,7 @@ symbol = " "
 symbol = " "
 
 [cmd_duration]
-format = "[  $duration ]($style)"
+format = "[ 耗時 $duration ]($style)"
 style = "fg:bright-white bg:18"
 
 [character]
