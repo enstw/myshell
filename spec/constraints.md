@@ -2,6 +2,11 @@
 
 Requirements the agent must respect when installing or configuring specific apps. The agent should check this file before installing anything from `apps.txt`.
 
+## wezterm
+
+- **macOS:** Install as a GUI application (Homebrew Cask).
+- **Ubuntu:** Prefer the official APT repository (apt.fury.io) or the `.deb` package. Flatpak is an alternative if the system supports it.
+
 ## docker
 
 - **macOS:** Docker Desktop (GUI app).
