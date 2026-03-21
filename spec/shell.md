@@ -37,6 +37,7 @@ All personal shell config goes in `~/.zsh/` as individual `*.zsh` files, sourced
 |------|---------|
 | `~/.zsh/aliases.zsh` | Aliases (modern CLI replacements, update, etc.) |
 | `~/.zsh/env.zsh` | PATH, LANG, umask, platform-specific vars |
+| `~/.zsh/history.zsh` | Zsh history configuration (shared, extended, etc.) |
 | `~/.zsh/motd.zsh` | Dynamic MOTD (Ubuntu only — do not create on macOS) |
 | `~/.zsh/zoxide.zsh` | zoxide init |
 
@@ -78,6 +79,23 @@ The agent generates this file during Converge based on what is actually installe
 - **LANG:** `zh_TW.UTF-8`
 - **umask:** `0077` (no group/other access on new files)
 - **Ubuntu-only:** set `XAUTHORITY=$HOME/.Xauthority`. On aarch64, set `DOCKER_DEFAULT_PLATFORM=linux/arm64`.
+
+### history.zsh
+
+```zsh
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=10000
+SAVEHIST=10000
+
+# Options
+setopt append_history
+setopt share_history
+setopt extended_history
+setopt hist_expire_dups_first
+setopt hist_ignore_dups
+setopt hist_ignore_space
+setopt hist_verify
+```
 
 ### zoxide.zsh
 
