@@ -2,45 +2,53 @@
 
 format = """
 [░▒▓](#a3aed2)\
-[  ](bg:#a3aed2 fg:#090c0c)\
-[](bg:#769ff0 fg:#a3aed2)\
+$os\
+[](bg:#769ff0 fg:#a3aed2)\
 $directory\
-[](fg:#769ff0 bg:#394260)\
+[](fg:#769ff0 bg:#394260)\
 $git_branch\
 $git_status\
 $git_state\
-[](fg:#394260 bg:#212736)\
+[](fg:#394260 bg:#212736)\
 $nodejs\
 $rust\
 $golang\
 $php\
+$python\
+$java\
+$ruby\
+$docker_context\
 $package\
-[](fg:#212736 bg:#1d2230)\
+[](fg:#212736 bg:#1d2230)\
 $cmd_duration\
 $time\
-[ ](fg:#1d2230)\
+[ ](fg:#1d2230)\
 \n$character"""
 
-# --- Directory (tokyo-night) ---
+# ─── Directory ────────────────────────────────────────────────
 
 [directory]
 style = "fg:#e3e5e5 bg:#769ff0"
 format = "[ $path ]($style)"
 truncation_length = 3
 truncation_symbol = "…/"
+read_only = " 󰌾"
 
 [directory.substitutions]
 "Documents" = "󰈙 "
-"Downloads" = " "
-"Music" = " "
-"Pictures" = " "
+"Downloads" = " "
+"Music" = " "
+"Pictures" = " "
 
-# --- Git (tokyo-night + Chinese TC) ---
+# ─── Git (Chinese TC labels) ─────────────────────────────────
 
 [git_branch]
-symbol = ""
+symbol = " "
 style = "bg:#394260"
 format = '[[ 於 $symbol $branch ](fg:#769ff0 bg:#394260)]($style)'
+
+[git_commit]
+tag_symbol = "  "
 
 [git_status]
 style = "bg:#394260"
@@ -66,45 +74,68 @@ bisect = "二分"
 am = "郵補"
 am_or_rebase = "郵補/重基"
 
-# --- VCS (Chinese TC) ---
+# ─── VCS (Chinese TC) ────────────────────────────────────────
 
 [fossil_branch]
+symbol = " "
 style = "bg:#394260"
 format = '[[ 於 $symbol$branch ](fg:#769ff0 bg:#394260)]($style)'
 
 [hg_branch]
+symbol = " "
 style = "bg:#394260"
 format = '[[ 於 $symbol$branch ](fg:#769ff0 bg:#394260)]($style)'
 
-# --- Languages (tokyo-night) ---
+# ─── Languages (tokyo-night bg layer) ────────────────────────
 
 [nodejs]
-symbol = ""
+symbol = " "
 style = "bg:#212736"
 format = '[[ $symbol ($version) ](fg:#769ff0 bg:#212736)]($style)'
 
 [rust]
-symbol = ""
+symbol = "󱘗 "
 style = "bg:#212736"
 format = '[[ $symbol ($version) ](fg:#769ff0 bg:#212736)]($style)'
 
 [golang]
-symbol = ""
+symbol = " "
 style = "bg:#212736"
 format = '[[ $symbol ($version) ](fg:#769ff0 bg:#212736)]($style)'
 
 [php]
-symbol = ""
+symbol = " "
 style = "bg:#212736"
 format = '[[ $symbol ($version) ](fg:#769ff0 bg:#212736)]($style)'
 
-# --- Package (Chinese TC) ---
+[python]
+symbol = " "
+style = "bg:#212736"
+format = '[[ $symbol ($version) ](fg:#769ff0 bg:#212736)]($style)'
+
+[java]
+symbol = " "
+style = "bg:#212736"
+format = '[[ $symbol ($version) ](fg:#769ff0 bg:#212736)]($style)'
+
+[ruby]
+symbol = " "
+style = "bg:#212736"
+format = '[[ $symbol ($version) ](fg:#769ff0 bg:#212736)]($style)'
+
+[docker_context]
+symbol = " "
+style = "bg:#212736"
+format = '[[ $symbol ($version) ](fg:#769ff0 bg:#212736)]($style)'
+
+# ─── Package (Chinese TC) ────────────────────────────────────
 
 [package]
+symbol = "󰏗 "
 style = "bg:#212736"
 format = '[[ 為 $symbol$version ](fg:#769ff0 bg:#212736)]($style)'
 
-# --- Duration & Time (tokyo-night + Chinese TC) ---
+# ─── Duration & Time (Chinese TC) ────────────────────────────
 
 [cmd_duration]
 style = "bg:#1d2230"
@@ -114,4 +145,62 @@ format = '[[ 歷 $duration ](fg:#a0a9cb bg:#1d2230)]($style)'
 disabled = false
 time_format = "%R"
 style = "bg:#1d2230"
-format = '[[  $time ](fg:#a0a9cb bg:#1d2230)]($style)'
+format = '[[  $time ](fg:#a0a9cb bg:#1d2230)]($style)'
+
+# ─── OS (auto-detected) ──────────────────────────────────────
+
+[os]
+disabled = false
+style = "bg:#a3aed2 fg:#090c0c"
+format = "[ $symbol ]($style)"
+
+[os.symbols]
+Alpaquita = " "
+Alpine = " "
+AlmaLinux = " "
+Amazon = " "
+Android = " "
+AOSC = " "
+Arch = " "
+Artix = " "
+CachyOS = " "
+CentOS = " "
+Debian = " "
+DragonFly = " "
+Elementary = " "
+Emscripten = " "
+EndeavourOS = " "
+Fedora = " "
+FreeBSD = " "
+Garuda = "󰛓 "
+Gentoo = " "
+HardenedBSD = "󰞌 "
+Illumos = "󰈸 "
+Ios = "󰀷 "
+Kali = " "
+Linux = " "
+Mabox = " "
+Macos = " "
+Manjaro = " "
+Mariner = " "
+MidnightBSD = " "
+Mint = " "
+NetBSD = " "
+NixOS = " "
+Nobara = " "
+OpenBSD = "󰈺 "
+openSUSE = " "
+OracleLinux = "󰌷 "
+Pop = " "
+Raspbian = " "
+Redhat = " "
+RedHatEnterprise = " "
+RockyLinux = " "
+Redox = "󰀘 "
+Solus = "󰠳 "
+SUSE = " "
+Ubuntu = " "
+Unknown = " "
+Void = " "
+Windows = "󰍲 "
+Zorin = " "
