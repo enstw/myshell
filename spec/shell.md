@@ -29,6 +29,10 @@ eval "$(starship init zsh)"
 
 Deploy the Starship configuration from `https://github.com/enstw/myshell-starship` (specifically `starship.toml`) to `~/.config/starship.toml`. This preset uses Nerd Font symbols and a powerline-style prompt with time, directory, and git segments.
 
+## eza
+
+Fetch the `tokyonight.yml` theme from `https://github.com/eza-community/eza-themes/blob/main/themes/tokyonight.yml` and deploy it as `theme.yml` to the platform-appropriate configuration directory.
+
 ## File Layout
 
 All personal shell config goes in `~/.zsh/` as individual `*.zsh` files, sourced from `~/.zshrc`.

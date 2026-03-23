@@ -23,6 +23,10 @@ On platforms where the binary is named `batcat`, the agent must ensure the alias
 
 On platforms where the binary is named `fdfind`, the agent must ensure the alias or symlink resolves to `fd`.
 
+## eza
+
+Fetch the `tokyonight.yml` theme from `https://github.com/eza-community/eza-themes/blob/main/themes/tokyonight.yml` and deploy it as `theme.yml` to the platform-appropriate configuration directory.
+
 ## npm
 
 Set the global prefix so globally installed packages do not require sudo. PATH must include the npm global bin directory.
