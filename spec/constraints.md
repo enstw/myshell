@@ -2,6 +2,10 @@
 
 Requirements the agent must respect when installing or configuring specific apps. The agent should check this file before installing anything from `apps.txt`.
 
+## git
+
+After installing git, ask the user for their preferred `user.name` and `user.email`, then set them with `git config --global`.
+
 ## docker
 
 - **macOS:** Docker Desktop (GUI app).
