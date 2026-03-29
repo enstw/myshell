@@ -27,7 +27,7 @@ Initialize at the bottom of `~/.zshrc`:
 eval "$(starship init zsh)"
 ```
 
-Deploy the Starship configuration from `https://github.com/enstw/myshell-starship` (specifically `starship.toml`) to `~/.config/starship.toml`. This preset uses Nerd Font symbols and a powerline-style prompt with time, directory, and git segments.
+Deploy the Starship configuration from `https://github.com/enstw/myshell-starship/raw/refs/heads/master/starship.toml` to `~/.config/starship.toml`. This preset uses Nerd Font symbols and a powerline-style prompt with time, directory, and git segments.
 
 ## eza
 

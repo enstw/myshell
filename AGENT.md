@@ -31,7 +31,7 @@ After reading the project files, present the user with the available protocols a
 Bring the host system into alignment with the repo state.
 
 1. **Install apps** — parse `spec/apps.txt` and discover the current best way to install each app on the current platform. Check official project documentation for the recommended method. Check `spec/constraints.md` for app-specific requirements before installing. Verify the correct binary is present after install.
-2. **Configure shell** — generate files defined in `spec/shell.md` and place them at their target paths. Fetch the Starship configuration from `https://github.com/enstw/myshell-starship` and deploy it to `~/.config/starship.toml`. Initialize zinit, starship, and plugins.
+2. **Configure shell** — generate files defined in `spec/shell.md` and place them at their target paths. Fetch the Starship configuration from `https://github.com/enstw/myshell-starship/raw/refs/heads/master/starship.toml` and deploy it to `~/.config/starship.toml`. Initialize zinit, starship, and plugins.
 3. **Install fonts** — see `spec/constraints.md` for font source and install locations.
 4. **Set timezone/locale** — apply settings from `spec/shell.md`.
 

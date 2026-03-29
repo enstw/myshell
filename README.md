@@ -30,7 +30,7 @@ Shell scripts are generated at runtime and removed after use. This repo holds **
 | `spec/shell.md` | Shell state specification (zsh, plugins, file layout) |
 | `spec/apps.txt` | Desired applications (agent resolves install method) |
 | `spec/constraints.md` | App-specific install requirements and post-install config |
-| `https://github.com/enstw/myshell-starship` | Starship prompt preset (Nerd Font powerline theme) |
+| `https://github.com/enstw/myshell-starship/raw/refs/heads/master/starship.toml` | Starship prompt preset (Nerd Font powerline theme) |
 
 ## Scope
 
