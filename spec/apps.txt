@@ -5,11 +5,9 @@
 
 # Core tools
 git
-gh                      # GitHub CLI
 zsh
 jq
 tmux
-node                    # includes npm
 fzf
 ripgrep
 p7zip
