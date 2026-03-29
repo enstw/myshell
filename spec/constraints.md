@@ -13,7 +13,7 @@ Must be the Rust-based tealdeer, not the Python-based `tldr` package. After inst
 
 ## proxmark3
 
-Only install when explicitly requested. Use the RRG/Iceman fork.
+Only install when explicitly requested. Use the RRG/Iceman fork (`brew tap RfidResearchGroup/proxmark3` then `brew install proxmark3`).
 
 ## bat
 
