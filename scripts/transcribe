@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+WHISPER_DIR="${WHISPER_DIR:-$HOME/tools/whisper.cpp}"
+WHISPER="$WHISPER_DIR/build/bin/whisper-cli"
+MODEL="$WHISPER_DIR/models/ggml-large-v3-turbo-q5_0.bin"
+
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 <youtube-url> [output-dir]"
+    exit 1
+fi
+
+URL="$1"
+OUTDIR="$(cd "${2:-.}" && pwd)"
+TMPDIR="$(mktemp -d)"
+
+trap 'rm -rf "$TMPDIR"' EXIT
+
+# Download audio as 16kHz mono WAV
+echo "Downloading audio..."
+yt-dlp -x --audio-format wav \
+    --js-runtimes nodejs \
+    --postprocessor-args "ffmpeg:-ar 16000 -ac 1" \
+    -o "$TMPDIR/%(title)s.%(ext)s" \
+    "$URL"
+
+# Find the downloaded wav
+WAV="$(find "$TMPDIR" -name '*.wav' | head -1)"
+if [ -z "$WAV" ]; then
+    echo "Error: no WAV file produced"
+    exit 1
+fi
+
+# Derive output filename from the audio title
+BASENAME="$(basename "$WAV" .wav)"
+OUTPUT="$OUTDIR/${BASENAME}.txt"
+
+# Transcribe with Vulkan GPU
+echo "Transcribing..."
+export LD_LIBRARY_PATH="$WHISPER_DIR/build/src:$WHISPER_DIR/build/ggml/src:$WHISPER_DIR/build/ggml/src/ggml-vulkan${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+"$WHISPER" -m "$MODEL" -f "$WAV" --device 0 -t 8 -otxt -of "$OUTDIR/$BASENAME"
+
+echo "Done: $OUTPUT"
