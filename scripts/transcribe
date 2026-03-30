@@ -19,7 +19,8 @@ trap 'rm -rf "$TMPDIR"' EXIT
 # Download audio as 16kHz mono WAV
 echo "Downloading audio..."
 yt-dlp -x --audio-format wav \
-    --js-runtimes nodejs \
+    --js-runtimes node \
+    --remote-components ejs:github \
     --postprocessor-args "ffmpeg:-ar 16000 -ac 1" \
     -o "$TMPDIR/%(title)s.%(ext)s" \
     "$URL"
