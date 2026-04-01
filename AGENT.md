@@ -77,6 +77,7 @@ Confirm the environment works after Converge.
 app_name                # optional description / disambiguation
 [mac] app_name          # macOS only
 [ubuntu] app_name       # Ubuntu only
+[optional] app_name     # skip unless user explicitly requests install
 ```
 
 - One app per line. Comments after `#` provide hints (e.g., which variant to install).

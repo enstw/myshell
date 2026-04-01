@@ -1,7 +1,7 @@
 # Desired applications
 # The agent resolves the best install method per platform.
 # Optional notes after # help the agent pick the right package.
-# Prefix: [mac] macOS only, [ubuntu] Ubuntu only
+# Prefix: [mac] macOS only, [ubuntu] Ubuntu only, [optional] skip unless explicitly requested
 
 # Core tools
 git
@@ -28,7 +28,10 @@ qrencode
 docker                  # Docker Desktop on macOS, docker-ce on Ubuntu
 zed                     # code editor
 
+# Academic writing
+[optional] quarto        # Quarto publishing system
+
 # Platform-specific
 [mac] watch
-[mac] proxmark3
+[mac] [optional] proxmark3
 [ubuntu] build-essential

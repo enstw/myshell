@@ -17,7 +17,7 @@ Must be the Rust-based tealdeer, not the Python-based `tldr` package. After inst
 
 ## proxmark3
 
-Only install when explicitly requested. Use the RRG/Iceman fork (`brew tap RfidResearchGroup/proxmark3` then `brew install proxmark3`).
+Use the RRG/Iceman fork (`brew tap RfidResearchGroup/proxmark3` then `brew install proxmark3`).
 
 ## bat
 
@@ -30,6 +30,13 @@ On platforms where the binary is named `fdfind`, the agent must ensure the alias
 ## eza
 
 Fetch the `tokyonight.yml` theme from `https://github.com/eza-community/eza-themes/blob/main/themes/tokyonight.yml` and deploy it as `theme.yml` to the platform-appropriate configuration directory.
+
+## quarto
+
+- **macOS:** `brew install --cask quarto`
+- **Ubuntu:** download the latest `.deb` from <https://quarto.org/docs/download/> and install with `dpkg -i`.
+
+After installing Quarto, also install TinyTeX via `quarto install tinytex`.
 
 ## npm
 
