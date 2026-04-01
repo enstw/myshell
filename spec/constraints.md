@@ -42,22 +42,16 @@ After installing Quarto, also install TinyTeX via `quarto install tinytex`.
 
 Set the global prefix so globally installed packages do not require sudo. PATH must include the npm global bin directory.
 
-## whisper.cpp
+## faster-whisper
 
-Build from source into `~/tools/whisper.cpp`. Requires `cmake`, `libvulkan-dev`, and `glslc` as build dependencies. Build with Vulkan GPU support:
-
-```sh
-git clone https://github.com/ggerganov/whisper.cpp ~/tools/whisper.cpp
-cd ~/tools/whisper.cpp
-cmake -B build -DGGML_VULKAN=1
-cmake --build build -j
-```
-
-Download the quantized large-v3-turbo model:
+Install into a dedicated venv at `~/tools/faster-whisper/venv`:
 
 ```sh
-./models/download-ggml-model.sh large-v3-turbo-q5_0
+python3 -m venv ~/tools/faster-whisper/venv
+~/tools/faster-whisper/venv/bin/pip install faster-whisper
 ```
+
+The default model is `large-v3-turbo` (downloaded automatically on first run).
 
 ## yt-dlp
 
