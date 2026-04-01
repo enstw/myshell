@@ -101,7 +101,14 @@ setopt hist_ignore_space
 setopt hist_verify
 
 # Ignore common short commands
+# HIST_IGNORE is not a built-in zsh variable — the zshaddhistory hook
+# below uses it to filter matching commands from history.
 HIST_IGNORE="(ll *|ll|ls *|ls)"
+
+zshaddhistory() {
+    local line="${1%%$'\n'}"
+    [[ "$line" != ${~HIST_IGNORE} ]]
+}
 ```
 
 ### zoxide.zsh
