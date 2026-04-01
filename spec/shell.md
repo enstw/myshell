@@ -122,9 +122,7 @@ fi
 
 ## ~/bin/update
 
-The `u` alias delegates to this script. The agent generates it during Converge with `chmod +x`, based on what is actually installed on the machine.
-
-**Intent:** update all installed package managers (Homebrew, apt, snap, etc.), clean up unused packages, and update zinit and all its plugins. Do not use `brew upgrade --greedy`.
+The `u` alias delegates to this script. During Converge, deploy `scripts/update` to `~/bin/update` with `chmod +x`. The script is the source of truth — do not regenerate it.
 
 ## Timezone and Locale
 
