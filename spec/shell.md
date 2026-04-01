@@ -99,6 +99,9 @@ setopt hist_expire_dups_first
 setopt hist_ignore_dups
 setopt hist_ignore_space
 setopt hist_verify
+
+# Ignore common short commands
+HIST_IGNORE="(ll *|ll|ls *|ls)"
 ```
 
 ### zoxide.zsh
