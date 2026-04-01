@@ -147,7 +147,7 @@ Deploy from `scripts/transcribe.sh` in this repo to `~/bin/transcribe` with `chm
 ## Timezone and Locale
 
 - **Timezone:** `Asia/Taipei`
-- **Locale:** Generate `en_US.UTF-8`, `en_GB.UTF-8`, `zh_TW.UTF-8`. Set `LANG=zh_TW.UTF-8`.
+- **Locale:** Generate `en_US.UTF-8`, `en_GB.UTF-8`, `zh_TW.UTF-8`. Set `LANG=zh_TW.UTF-8`. Set `LANGUAGE=zh_TW:en` (no bare `zh` — it may resolve to Simplified Chinese). Do **not** set `LC_ALL` — it overrides `LANG` and prevents per-category locale control.
 
 ## App-specific configuration
 
