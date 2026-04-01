@@ -13,6 +13,8 @@ ripgrep
 p7zip
 imagemagick
 ffmpeg
+yt-dlp                  # YouTube downloader
+whisper.cpp             # speech-to-text — build from source with -DGGML_VULKAN=1
 
 # Modern CLI replacements
 bat                     # cat replacement

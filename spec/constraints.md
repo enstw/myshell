@@ -42,6 +42,27 @@ After installing Quarto, also install TinyTeX via `quarto install tinytex`.
 
 Set the global prefix so globally installed packages do not require sudo. PATH must include the npm global bin directory.
 
+## whisper.cpp
+
+Build from source into `~/tools/whisper.cpp`. Requires `cmake`, `libvulkan-dev`, and `glslc` as build dependencies. Build with Vulkan GPU support:
+
+```sh
+git clone https://github.com/ggerganov/whisper.cpp ~/tools/whisper.cpp
+cd ~/tools/whisper.cpp
+cmake -B build -DGGML_VULKAN=1
+cmake --build build -j
+```
+
+Download the quantized large-v3-turbo model:
+
+```sh
+./models/download-ggml-model.sh large-v3-turbo-q5_0
+```
+
+## yt-dlp
+
+Install via `pip` (or `pipx`) to get the latest version rather than the distro package, which is often outdated.
+
 ## fonts
 
 Fetch the latest `.ttf` files from `https://ent.tw/font` (redirects to the GitHub releases API). Install to `~/Library/Fonts/` (macOS) or `~/.local/share/fonts/` (Ubuntu, then run `fc-cache -f`).

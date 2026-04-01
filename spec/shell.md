@@ -127,9 +127,22 @@ if [[ -x "/usr/bin/run-parts" ]] && [[ -d "/etc/update-motd.d" ]]; then
 fi
 ```
 
-## ~/bin/update
+## ~/bin Scripts
+
+### ~/bin/update
 
 The `u` alias delegates to this script. During Converge, deploy `scripts/update` to `~/bin/update` with `chmod +x`. The script is the source of truth — do not regenerate it.
+
+### ~/bin/transcribe
+
+Deploy from `scripts/transcribe.sh` in this repo to `~/bin/transcribe` with `chmod +x`.
+
+**Intent:** Download audio from a YouTube URL via `yt-dlp` and transcribe it using whisper.cpp with Vulkan GPU acceleration. Outputs a `.txt` transcript.
+
+**Usage:** `transcribe <youtube-url> [output-dir]`
+- `output-dir` defaults to the current directory
+
+**Dependencies:** `yt-dlp`, `ffmpeg`, whisper.cpp built at `$WHISPER_DIR` (defaults to `~/tools/whisper.cpp`).
 
 ## Timezone and Locale
 
