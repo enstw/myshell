@@ -80,7 +80,9 @@ The agent generates this file during Converge. Alias targets must match the actu
 The agent generates this file during Converge based on what is actually installed.
 
 - **PATH** must include directories for: user scripts (`~/bin`), user-local binaries (`~/.local/bin`), npm global, and Homebrew (if on macOS). Only add directories that exist. Deduplicate PATH.
+- Unset `LC_ALL` if inherited from the session (it overrides everything).
 - **LANG:** `zh_TW.UTF-8`
+- **LANGUAGE:** `zh_TW:en`
 - **umask:** `0077` (no group/other access on new files)
 - **Ubuntu-only:** set `XAUTHORITY=$HOME/.Xauthority`. On aarch64, set `DOCKER_DEFAULT_PLATFORM=linux/arm64`.
 
