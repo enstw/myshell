@@ -55,8 +55,9 @@ Report differences without making changes.
 1. Verify files at target paths match the spec.
 2. Check all packages in `spec/` are installed.
 3. Diff active shell files against spec definitions.
+4. Compare installed versions of all apps against `~/.install.log`. Flag major version changes (e.g., Node 20→22, Docker 26→27) so the user can review before upgrading.
 
-**Outcome:** a drift report detailing what is missing or different.
+**Outcome:** a drift report detailing what is missing, different, or has a pending major version bump.
 
 ### Verify
 
