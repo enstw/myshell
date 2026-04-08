@@ -37,3 +37,4 @@ zed                     # code editor
 [mac] watch
 [mac] [optional] proxmark3
 [ubuntu] build-essential
+pymupdf4llm

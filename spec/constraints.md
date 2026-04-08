@@ -60,3 +60,7 @@ Install via `pip` (or `pipx`) to get the latest version rather than the distro p
 ## fonts
 
 Fetch the latest `.ttf` files from `https://ent.tw/font` (redirects to the GitHub releases API). Install to `~/Library/Fonts/` (macOS) or `~/.local/share/fonts/` (Ubuntu, then run `fc-cache -f`).
+
+## pymupdf4llm
+
+Install via `pip` (or `pipx`) to get the latest version. If using `pip` on managed environments (like macOS), use `--user` and `--break-system-packages`.
