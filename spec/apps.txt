@@ -13,8 +13,9 @@ ripgrep
 p7zip
 imagemagick
 ffmpeg
-yt-dlp                  # YouTube downloader
-faster-whisper           # speech-to-text — install via pip into ~/tools/faster-whisper/venv
+uv                      # Python package/venv/tool manager — replaces pip, pipx, venv, pyenv
+yt-dlp                  # YouTube downloader — install via `uv tool install`
+faster-whisper           # speech-to-text — install into a uv-managed venv at ~/tools/faster-whisper/venv
 
 # Modern CLI replacements
 bat                     # cat replacement
@@ -37,4 +38,4 @@ zed                     # code editor
 [mac] watch
 [mac] [optional] proxmark3
 [ubuntu] build-essential
-pymupdf4llm
+pymupdf4llm             # PDF→Markdown library — install into a uv-managed venv at ~/tools/pdf2md/venv

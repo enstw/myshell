@@ -72,7 +72,7 @@ The agent generates this file during Converge. Alias targets must match the actu
 | `cat` | `bat --paging=never` | binary may be `batcat` — see constraints |
 | `fd` | `fd` | binary may be `fdfind` — see constraints |
 | `qrencode` | `qrencode -t ansiutf8 -r` | |
-| `upip` | upgrade all outdated pip packages | user-only (`--user`) to avoid breaking system packages |
+| `uup` | `uv tool upgrade --all` | upgrade all uv-installed CLI tools |
 | `u` | `~/bin/update` | |
 
 ### env.zsh

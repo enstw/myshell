@@ -42,20 +42,29 @@ After installing Quarto, also install TinyTeX via `quarto install tinytex`.
 
 Set the global prefix so globally installed packages do not require sudo. PATH must include the npm global bin directory.
 
+## uv
+
+Install `uv` first — most other Python tooling in this spec depends on it. Use the official installer or the platform package manager:
+
+- **macOS:** `brew install uv`
+- **Ubuntu:** `curl -LsSf https://astral.sh/uv/install.sh | sh`
+
+`uv` replaces `pip`, `pipx`, `venv`, and `pyenv`. Never use `pip install --break-system-packages` — create a uv-managed venv or use `uv tool install` instead.
+
 ## faster-whisper
 
-Install into a dedicated venv at `~/tools/faster-whisper/venv`:
+Library used by `~/bin/transcribe`. Install into a dedicated uv-managed venv at `~/tools/faster-whisper/venv`:
 
 ```sh
-python3 -m venv ~/tools/faster-whisper/venv
-~/tools/faster-whisper/venv/bin/pip install faster-whisper
+uv venv ~/tools/faster-whisper/venv
+uv pip install --python ~/tools/faster-whisper/venv/bin/python faster-whisper
 ```
 
 The default model is `large-v3-turbo` (downloaded automatically on first run).
 
 ## yt-dlp
 
-Install via `pip` (or `pipx`) to get the latest version rather than the distro package, which is often outdated.
+CLI tool. Install with `uv tool install yt-dlp` to get the latest version rather than the distro package, which is often outdated. Upgrade with `uv tool upgrade yt-dlp`.
 
 ## fonts
 
@@ -63,4 +72,11 @@ Fetch the latest `.ttf` files from `https://ent.tw/font` (redirects to the GitHu
 
 ## pymupdf4llm
 
-Install via `pip` (or `pipx`) to get the latest version. If using `pip` on managed environments (like macOS), use `--user` and `--break-system-packages`.
+Library used by `~/bin/pdf2md` (imported as `pymupdf4llm`, not invoked as a CLI). Install into a dedicated uv-managed venv at `~/tools/pdf2md/venv`:
+
+```sh
+uv venv ~/tools/pdf2md/venv
+uv pip install --python ~/tools/pdf2md/venv/bin/python pymupdf4llm
+```
+
+The `pdf2md` script invokes `~/tools/pdf2md/venv/bin/python` directly — do not rely on system Python.

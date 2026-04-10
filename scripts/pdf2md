@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+VENV="$HOME/tools/pdf2md/venv"
+
+if [ ! -x "$VENV/bin/python" ]; then
+    echo "Error: pdf2md venv not found at $VENV" >&2
+    echo "Create it with: uv venv $VENV && uv pip install --python $VENV/bin/python pymupdf4llm" >&2
+    exit 1
+fi
+
 if [ $# -lt 1 ]; then
     echo "Usage: $0 <pdf-file|directory> [output-dir]"
     exit 1
@@ -13,19 +21,19 @@ PROVIDED_OUTDIR="${2:-}"
 convert_file() {
     local INFILE="$1"
     local TARGET_OUTDIR="$2"
-    
+
     # If no output dir was provided, use the directory of the input file
     if [ -z "$TARGET_OUTDIR" ]; then
         TARGET_OUTDIR="$(cd "$(dirname "$INFILE")" && pwd)"
     fi
 
     mkdir -p "$TARGET_OUTDIR"
-    
+
     local BASENAME="$(basename "$INFILE" | sed 's/\.[^.]*$//')"
     local OUTPUT="$TARGET_OUTDIR/${BASENAME}.md"
-    
+
     echo "Converting $INFILE using pymupdf4llm..."
-    python3 -c "
+    "$VENV/bin/python" -c "
 import sys
 import pymupdf4llm
 try:
