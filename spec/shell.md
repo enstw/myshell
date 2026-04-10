@@ -135,17 +135,6 @@ fi
 
 The `u` alias delegates to this script. During Converge, deploy `scripts/update` to `~/bin/update` with `chmod +x`. The script is the source of truth — do not regenerate it.
 
-### ~/bin/transcribe
-
-Deploy from `scripts/transcribe.sh` in this repo to `~/bin/transcribe` with `chmod +x`.
-
-**Intent:** Download audio from a YouTube URL via `yt-dlp` and transcribe it using faster-whisper. Outputs a `.txt` transcript.
-
-**Usage:** `transcribe <youtube-url|audio-file> [output-dir]`
-- `output-dir` defaults to the current directory
-
-**Dependencies:** `yt-dlp`, `ffmpeg`, faster-whisper venv at `~/tools/faster-whisper/venv`.
-
 ## Timezone and Locale
 
 - **Timezone:** `Asia/Taipei`

@@ -51,17 +51,6 @@ Install `uv` first — most other Python tooling in this spec depends on it. Use
 
 `uv` replaces `pip`, `pipx`, `venv`, and `pyenv`. Never use `pip install --break-system-packages` — create a uv-managed venv or use `uv tool install` instead.
 
-## faster-whisper
-
-Library used by `~/bin/transcribe`. Install into a dedicated uv-managed venv at `~/tools/faster-whisper/venv`:
-
-```sh
-uv venv ~/tools/faster-whisper/venv
-uv pip install --python ~/tools/faster-whisper/venv/bin/python faster-whisper
-```
-
-The default model is `large-v3-turbo` (downloaded automatically on first run).
-
 ## yt-dlp
 
 CLI tool. Install with `uv tool install yt-dlp` to get the latest version rather than the distro package, which is often outdated. Upgrade with `uv tool upgrade yt-dlp`.
@@ -69,14 +58,3 @@ CLI tool. Install with `uv tool install yt-dlp` to get the latest version rather
 ## fonts
 
 Fetch the latest `.ttf` files from `https://ent.tw/font` (redirects to the GitHub releases API). Install to `~/Library/Fonts/` (macOS) or `~/.local/share/fonts/` (Ubuntu, then run `fc-cache -f`).
-
-## pymupdf4llm
-
-Library used by `~/bin/pdf2md` (imported as `pymupdf4llm`, not invoked as a CLI). Install into a dedicated uv-managed venv at `~/tools/pdf2md/venv`:
-
-```sh
-uv venv ~/tools/pdf2md/venv
-uv pip install --python ~/tools/pdf2md/venv/bin/python pymupdf4llm
-```
-
-The `pdf2md` script invokes `~/tools/pdf2md/venv/bin/python` directly — do not rely on system Python.
