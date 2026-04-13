@@ -42,6 +42,15 @@ Fetch the `tokyonight.yml` theme from `https://github.com/eza-community/eza-them
 
 After installing Quarto, also install TinyTeX via `quarto install tinytex`.
 
+## pandoc
+
+Install `pandoc` together with a working `xelatex` engine — pandoc's PDF output (and CJK-friendly typesetting) requires it.
+
+- **macOS:** `brew install pandoc` and ensure a TeX distribution providing `xelatex` is present (e.g. `brew install --cask mactex-no-gui`, or BasicTeX + `tlmgr install xetex`).
+- **Ubuntu:** `apt install pandoc texlive-xetex`.
+
+Verify with `pandoc --version` and `xelatex --version`.
+
 ## npm
 
 Set the global prefix so globally installed packages do not require sudo. PATH must include the npm global bin directory.
