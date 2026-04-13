@@ -26,7 +26,7 @@ Shell scripts are generated at runtime and removed after use. This repo holds **
 
 | Path | Purpose |
 |------|---------|
-| `AGENT.md` | AI operator protocols and working rules |
+| `AGENTS.md` | AI operator protocols and working rules |
 | `spec/shell.md` | Shell state specification (zsh, plugins, file layout) |
 | `spec/apps.txt` | Desired applications (agent resolves install method) |
 | `spec/constraints.md` | App-specific install requirements and post-install config |
