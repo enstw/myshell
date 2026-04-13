@@ -44,7 +44,7 @@ After installing Quarto, also install TinyTeX via `quarto install tinytex`.
 
 ## pandoc
 
-Install `pandoc` together with a working `xelatex` engine — pandoc's PDF output (and CJK-friendly typesetting) requires it.
+Optional. Install only when explicitly requested. When installed, pair `pandoc` with a working `xelatex` engine (also optional, but required for pandoc's PDF output and CJK-friendly typesetting).
 
 - **macOS:** `brew install pandoc` and ensure a TeX distribution providing `xelatex` is present (e.g. `brew install --cask mactex-no-gui`, or BasicTeX + `tlmgr install xetex`).
 - **Ubuntu:** `apt install pandoc texlive-xetex`.
