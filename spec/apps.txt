@@ -32,6 +32,7 @@ zed                     # code editor
 
 # Academic writing
 [optional] quarto        # Quarto publishing system
+pandoc                   # universal document converter
 
 # Platform-specific
 [mac] watch

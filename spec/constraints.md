@@ -2,6 +2,10 @@
 
 Requirements the agent must respect when installing or configuring specific apps. The agent should check this file before installing anything from `apps.txt`.
 
+## Python tooling (global rule)
+
+For anything Python-related — packages, virtual environments, or CLI tools — **`uv` is the priority and only sanctioned tool**. Never use `pip`, `pipx`, `python -m venv`, `python -m pip`, `pyenv`, or `poetry`. If an app's official docs specify `pip install` or `pipx install`, translate to the `uv` equivalent (`uv tool install`, `uvx`, or a `uv venv` + `uv pip install --python <venv>/bin/python`) before running.
+
 ## git
 
 After installing git, ask the user for their preferred `user.name` and `user.email`, then set them with `git config --global`.
