@@ -28,4 +28,14 @@ if command -v zinit &>/dev/null; then
     zsh -ic 'zinit self-update; zinit update --all'
 fi
 
+# npm
+if command -v npm &>/dev/null; then
+    echo "==> Updating npm global packages..."
+    npm update -g
+    if [[ -d "$HOME/tools/gemini-cli" ]]; then
+        echo "==> Updating local gemini-cli..."
+        (cd "$HOME/tools/gemini-cli" && npm update)
+    fi
+fi
+
 echo "==> Done."

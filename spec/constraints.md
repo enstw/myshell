@@ -55,6 +55,16 @@ Verify with `pandoc --version` and `xelatex --version`.
 
 Set the global prefix so globally installed packages do not require sudo. PATH must include the npm global bin directory.
 
+## gemini-cli
+
+The agent must install `gemini-cli` locally to avoid deprecated global dependencies (e.g., `prebuild-install`).
+
+- **Location:** `~/tools/gemini-cli`
+- **Installation:** `mkdir -p ~/tools/gemini-cli && cd ~/tools/gemini-cli && npm init -y && npm install @google/gemini-cli`
+- **Alias:** `alias gemini='npx --prefix ~/tools/gemini-cli gemini'`
+- **Migration:** If the agent detects a global `@google/gemini-cli` installation, it must uninstall it after the local setup is complete.
+- **Update:** The local installation should be updated via `(cd ~/tools/gemini-cli && npm update)` in the `update` script.
+
 ## uv
 
 Install `uv` first — most other Python tooling in this spec depends on it. Use the official installer or the platform package manager:

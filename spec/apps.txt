@@ -15,6 +15,7 @@ imagemagick
 ffmpeg
 uv                      # Python package/venv/tool manager — replaces pip, pipx, venv, pyenv
 yt-dlp                  # YouTube downloader — install via `uv tool install`
+gemini-cli              # AI CLI agent — local install; see constraints.md
 
 # Modern CLI replacements
 bat                     # cat replacement
