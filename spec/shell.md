@@ -72,7 +72,7 @@ The agent generates this file during Converge. Alias targets must match the actu
 | `cat` | `bat --paging=never` | binary may be `batcat` — see constraints |
 | `fd` | `fd` | binary may be `fdfind` — see constraints |
 | `qrencode` | `qrencode -t ansiutf8 -r` | |
-| `gemini` | `npx --prefix ~/tools/gemini-cli gemini` | local npm install; see constraints |
+| `gemini` | `npx --prefix <location> gemini` | local npm install; resolves to OS-specific path, see constraints |
 | `uup` | `uv tool upgrade --all` | upgrade all uv-installed CLI tools |
 | `u` | `~/bin/update` | |
 

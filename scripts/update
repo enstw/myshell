@@ -32,6 +32,14 @@ fi
 if command -v npm &>/dev/null; then
     echo "==> Updating npm global packages..."
     npm update -g
+    
+    # Local gemini-cli update (OS-agnostic check)
+    for dir in "$HOME/.local/lib/gemini-cli" "$HOME/Library/Application Support/gemini-cli"; do
+        if [[ -d "$dir" ]]; then
+            echo "==> Updating local gemini-cli in $dir..."
+            (cd "$dir" && npm update)
+        fi
+    done
 fi
 
 echo "==> Done."

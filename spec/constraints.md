@@ -59,11 +59,13 @@ Set the global prefix so globally installed packages do not require sudo. PATH m
 
 The agent must install `gemini-cli` locally to avoid deprecated global dependencies (e.g., `prebuild-install`).
 
-- **Location:** `~/tools/gemini-cli`
-- **Installation:** `mkdir -p ~/tools/gemini-cli && cd ~/tools/gemini-cli && npm init -y && npm install @google/gemini-cli`
-- **Alias:** `alias gemini='npx --prefix ~/tools/gemini-cli gemini'`
+- **Location:**
+  - **macOS:** `~/Library/Application Support/gemini-cli`
+  - **Ubuntu:** `~/.local/lib/gemini-cli`
+- **Installation:** `mkdir -p <location> && cd <location> && npm init -y && npm install @google/gemini-cli`
+- **Alias:** `alias gemini='npx --prefix <location> gemini'`
 - **Migration:** If the agent detects a global `@google/gemini-cli` installation, it must uninstall it after the local setup is complete.
-- **Update:** The local installation should be updated via `(cd ~/tools/gemini-cli && npm update)` in the `update` script.
+- **Update:** The local installation should be updated via `(cd <location> && npm update)` in the `update` script.
 
 ## uv
 
