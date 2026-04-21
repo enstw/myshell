@@ -35,12 +35,12 @@ Fetch the `tokyonight.yml` theme from `https://github.com/eza-community/eza-them
 
 ## File Layout
 
-All personal shell config goes in `~/.zsh/` as individual `*.zsh` files, sourced from `~/.zshrc`.
+Environment that every shell needs (PATH, locale, umask) lives in `~/.zshenv` — zsh sources it for **all** shells (interactive, non-interactive, scripts, cron, `ssh host 'cmd'`). Interactive-only config (aliases, history, prompt, plugin init) lives in `~/.zsh/*.zsh`, sourced from `~/.zshrc`.
 
 | File | Purpose |
 |------|---------|
+| `~/.zshenv` | PATH, LANG, LANGUAGE, umask, platform-specific env vars |
 | `~/.zsh/aliases.zsh` | Aliases (modern CLI replacements, update, etc.) |
-| `~/.zsh/env.zsh` | PATH, LANG, umask, platform-specific vars |
 | `~/.zsh/history.zsh` | Zsh history configuration (shared, extended, etc.) |
 | `~/.zsh/motd.zsh` | Dynamic MOTD (Ubuntu only — do not create on macOS) |
 | `~/.zsh/zoxide.zsh` | zoxide init |
@@ -50,7 +50,7 @@ All personal shell config goes in `~/.zsh/` as individual `*.zsh` files, sourced
 ```zsh
 # zinit initialization block (top)
 # zinit plugin loading block
-# Source custom configs:
+# Source custom configs (PATH already set via ~/.zshenv, so alias probes work):
 for f in ~/.zsh/*.zsh(N); do source $f; done
 # Ubuntu command-not-found handler:
 [[ -f /etc/zsh_command_not_found ]] && source /etc/zsh_command_not_found
@@ -60,9 +60,22 @@ eval "$(starship init zsh)"
 
 ## File Definitions
 
+### ~/.zshenv
+
+The agent generates this file during Converge based on what is actually installed. This file is sourced by every zsh invocation, so anything a non-interactive script might need (PATH, locale, umask, docker platform) belongs here — not in `~/.zshrc` or `~/.zsh/*.zsh`.
+
+- **PATH** must include directories for: user scripts (`~/bin`), user-local binaries (`~/.local/bin`), npm global, and Homebrew (if on macOS). Only add directories that exist. Deduplicate PATH (use `typeset -U path PATH`).
+- Unset `LC_ALL` if inherited from the session (it overrides everything).
+- **LANG:** `zh_TW.UTF-8`
+- **LANGUAGE:** `zh_TW:en`
+- **umask:** `0077` (no group/other access on new files)
+- **Ubuntu-only:** set `XAUTHORITY=$HOME/.Xauthority`. On aarch64, set `DOCKER_DEFAULT_PLATFORM=linux/arm64`.
+
 ### aliases.zsh
 
 The agent generates this file during Converge. Alias targets must match the actual binary names present after install (see `spec/constraints.md` for bat/fd).
+
+**Guard every alias on binary existence**, e.g. `command -v eza &>/dev/null && alias ls='eza --icons'`. A partial Converge (staged install, missing optional dependency) must still produce a clean-loading shell instead of aliases that fail only at invocation time.
 
 | Alias | Target | Notes |
 |-------|--------|-------|
@@ -75,17 +88,6 @@ The agent generates this file during Converge. Alias targets must match the actu
 | `gemini` | `npx --prefix <location> gemini` | local npm install; resolves to OS-specific path, see constraints |
 | `uup` | `uv tool upgrade --all` | upgrade all uv-installed CLI tools |
 | `u` | `~/bin/update` | |
-
-### env.zsh
-
-The agent generates this file during Converge based on what is actually installed.
-
-- **PATH** must include directories for: user scripts (`~/bin`), user-local binaries (`~/.local/bin`), npm global, and Homebrew (if on macOS). Only add directories that exist. Deduplicate PATH.
-- Unset `LC_ALL` if inherited from the session (it overrides everything).
-- **LANG:** `zh_TW.UTF-8`
-- **LANGUAGE:** `zh_TW:en`
-- **umask:** `0077` (no group/other access on new files)
-- **Ubuntu-only:** set `XAUTHORITY=$HOME/.Xauthority`. On aarch64, set `DOCKER_DEFAULT_PLATFORM=linux/arm64`.
 
 ### history.zsh
 

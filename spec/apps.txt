@@ -10,7 +10,7 @@ jq
 tmux
 fzf
 ripgrep
-p7zip
+7zip                    # Ubuntu 24.04+: `7zip` (replaces p7zip-full); macOS brew: `sevenzip`
 imagemagick
 ffmpeg
 uv                      # Python package/venv/tool manager — replaces pip, pipx, venv, pyenv
