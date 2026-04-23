@@ -1,35 +1,35 @@
 # myshell bootstrap — work in progress
 
-A human-runnable installer for colleagues, complementing the AI-agent flow.
-Two stages so the colleague runs one command on a bare Mac or minimal Ubuntu.
+Two-stage installer so a colleague runs one command on a bare Mac or minimal Ubuntu.
 
 ## Status
 
 - `bootstrap` — POSIX-sh stage 1. Installs brew + bash 5 on macOS, refreshes apt on Ubuntu, then `exec`s stage 2.
-- `scripts/install` — bash 5 stage 2. MVP of what `spec/*` describes.
+- `scripts/install` — bash 5 stage 2. Self-documenting; cross-cutting rules live in its header banner.
 
 Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
 
 ## Done in stage 2
 
 1. Core apps via brew (mac) or apt + upstream installers for uv/starship/eza/glow (Ubuntu).
+1. node+npm installed (brew `node` on mac, apt `nodejs npm` on Ubuntu).
 1. `batcat`/`fdfind` → `bat`/`fd` symlinks on Ubuntu.
 1. zinit cloned to `~/.local/share/zinit/zinit.git`.
 1. Writes `~/.zshenv`, `~/.zsh/{aliases,history,zoxide}.zsh`, `~/.zsh/motd.zsh` (Ubuntu), `~/.zshrc`.
 1. Copies `scripts/update` → `~/bin/update`.
 1. Fetches `starship.toml` and eza tokyonight `theme.yml`.
 1. Prompts for `git user.name` / `user.email`.
+1. Locale generation on Ubuntu: `en_US.UTF-8`, `en_GB.UTF-8`, `zh_TW.UTF-8`; default `LANG=zh_TW.UTF-8`, `LANGUAGE=zh_TW:en`.
+1. Timezone set to `Asia/Taipei` (systemsetup on mac; timedatectl or `/etc/timezone` fallback on Ubuntu).
+1. npm global prefix set to `~/.npm-global` (no-sudo installs); PATH pickup already handled in `~/.zshenv`.
+1. gemini-cli installed locally (OS-specific path — see install header); `gemini` alias wired via `npx --prefix`; any global `@google/gemini-cli` removed.
+1. tealdeer config written (`auto_update = true`) and page cache fetched with `LANGUAGE=zh_TW:en`.
 1. Opt-in ENS font install from `ent.tw/font` (assumes redirect to GitHub releases JSON).
 1. Adds zsh to `/etc/shells`, offers `chsh`.
 
 ## Deferred (not yet in `scripts/install`)
 
-1. gemini-cli local install (constraints.md §gemini-cli).
-1. tealdeer language config (`zh_TW` + `en`).
-1. Locale generation: `en_US.UTF-8`, `en_GB.UTF-8`, `zh_TW.UTF-8`.
-1. Timezone `Asia/Taipei`.
 1. `yt-dlp` via `uv tool install`.
-1. npm global prefix config (no-sudo installs).
 1. Optional apps: quarto + TinyTeX, pandoc + xelatex, proxmark3, docker, zed.
 1. Ubuntu `command-not-found` data install (`sudo apt install command-not-found && sudo apt update`).
 

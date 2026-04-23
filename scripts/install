@@ -1,9 +1,47 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# myshell stage 2 installer (bash 5).
+# =============================================================================
+# myshell stage 2 installer (bash 5)
+# =============================================================================
 # Invoked by ../bootstrap after brew + bash 5 are ready.
-# Idempotent: safe to rerun.
+# Idempotent: safe to rerun. Targets macOS (brew) and Ubuntu 22.04+ (apt).
+#
+# This script is the source of truth. Local rationale lives inline next to the
+# code that enforces it; cross-cutting rules that govern many decisions are
+# listed here.
+#
+# Cross-cutting rules:
+#
+# - Python tooling: `uv` is the only sanctioned Python tool. Never pip, pipx,
+#   python -m venv, pyenv, or poetry. Translate upstream `pip install X` or
+#   `pipx install X` to `uv tool install X` or a `uv venv` + `uv pip install`.
+#   Machines get wedged by pipx + `pip --break-system-packages`; uv is the fix.
+#
+# - Locale: LANG=zh_TW.UTF-8, LANGUAGE=zh_TW:en. Never bare `zh` (resolves to
+#   Simplified on some systems). Never set LC_ALL (it overrides per-category
+#   locale control and breaks LANG).
+#
+# - Timezone: Asia/Taipei.
+#
+# - gemini-cli: install locally, not `npm install -g`. The global package
+#   drags in deprecated prebuild-install. Paths: macOS ~/Library/Application
+#   Support/gemini-cli; Ubuntu ~/.local/lib/gemini-cli. `gemini` alias wraps
+#   `npx --prefix <path>`.
+#
+# - tealdeer: the Rust `tealdeer`, not the Python `tldr`. Page language comes
+#   from $LANGUAGE (tealdeer has no language option of its own).
+#
+# - npm: global prefix is ~/.npm-global so globals don't need sudo. PATH
+#   pickup is handled in ~/.zshenv.
+#
+# - zsh layout: ~/.zshenv is sourced by every zsh invocation — PATH, locale,
+#   umask, anything non-interactive scripts or cron need. ~/.zsh/*.zsh is
+#   interactive-only, sourced from ~/.zshrc.
+#
+# - Aliases guard on binary presence so a partial install still yields a
+#   clean-loading shell.
+# =============================================================================
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -12,6 +50,9 @@ case "$(uname -s)" in
     Linux)  OS=ubuntu ;;
     *) echo "unsupported OS: $(uname -s)" >&2; exit 1 ;;
 esac
+
+# Ensure user-local bins (uv, cargo, ~/.local/bin) are reachable in this process.
+export PATH="$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 log()     { printf '\n==> %s\n' "$*"; }
 sublog()  { printf '    %s\n' "$*"; }
@@ -46,7 +87,7 @@ install_apps() {
 
 install_apps_macos() {
     local formulae=(
-        git zsh jq tmux fzf ripgrep sevenzip imagemagick ffmpeg uv
+        git zsh jq tmux fzf ripgrep sevenzip imagemagick ffmpeg uv node
         bat eza fd zoxide starship tealdeer glow qrencode
         watch
     )
@@ -58,7 +99,8 @@ install_apps_ubuntu() {
     sublog "apt base packages..."
     sudo apt-get install -y \
         git zsh jq tmux fzf ripgrep 7zip imagemagick ffmpeg curl ca-certificates \
-        bat fd-find zoxide tealdeer qrencode build-essential wget gpg
+        bat fd-find zoxide tealdeer qrencode build-essential wget gpg \
+        nodejs npm locales tzdata
 
     # Ubuntu names bat/fd differently; symlink into ~/.local/bin so aliases find them.
     mkdir -p "$HOME/.local/bin"
@@ -165,6 +207,13 @@ command -v bat      >/dev/null && alias cat='bat --paging=never'
 command -v qrencode >/dev/null && alias qrencode='qrencode -t ansiutf8 -r'
 command -v uv       >/dev/null && alias uup='uv tool upgrade --all'
 [[ -x "$HOME/bin/update" ]] && alias u="$HOME/bin/update"
+
+# gemini-cli: local npm install, OS-specific location. See script header.
+if [[ -d "$HOME/.local/lib/gemini-cli/node_modules/@google/gemini-cli" ]]; then
+    alias gemini='npx --prefix "$HOME/.local/lib/gemini-cli" gemini'
+elif [[ -d "$HOME/Library/Application Support/gemini-cli/node_modules/@google/gemini-cli" ]]; then
+    alias gemini='npx --prefix "$HOME/Library/Application Support/gemini-cli" gemini'
+fi
 EOF
 
     sublog "~/.zsh/history.zsh"
@@ -270,6 +319,115 @@ configure_git() {
     sublog "$new_name <$new_email>"
 }
 
+configure_locale() {
+    if [[ "$OS" != ubuntu ]]; then
+        log "Locale generation..."
+        sublog "macOS: system locales are available per-user, skipping locale-gen"
+        return 0
+    fi
+    log "Generating locales (en_US, en_GB, zh_TW — .UTF-8)..."
+    if ! command -v locale-gen >/dev/null; then
+        sublog "locale-gen missing; installing 'locales'..."
+        sudo apt-get install -y locales
+    fi
+    sudo locale-gen en_US.UTF-8 en_GB.UTF-8 zh_TW.UTF-8 >/dev/null
+    sudo update-locale LANG=zh_TW.UTF-8 LANGUAGE=zh_TW:en >/dev/null
+    sublog "default LANG=zh_TW.UTF-8 LANGUAGE=zh_TW:en"
+}
+
+configure_timezone() {
+    log "Setting timezone to Asia/Taipei..."
+    local target=Asia/Taipei current
+    if [[ "$OS" == macos ]]; then
+        current=$(sudo systemsetup -gettimezone 2>/dev/null | awk -F': ' '{print $2}' || true)
+        if [[ "$current" == "$target" ]]; then
+            sublog "already $target"
+            return 0
+        fi
+        sudo systemsetup -settimezone "$target" >/dev/null
+    elif command -v timedatectl >/dev/null && timedatectl status >/dev/null 2>&1; then
+        current=$(timedatectl show --property=Timezone --value 2>/dev/null || true)
+        if [[ "$current" == "$target" ]]; then
+            sublog "already $target"
+            return 0
+        fi
+        sudo timedatectl set-timezone "$target"
+    else
+        # Container / no systemd: write /etc/timezone + relink /etc/localtime.
+        echo "$target" | sudo tee /etc/timezone >/dev/null
+        sudo ln -sf "/usr/share/zoneinfo/$target" /etc/localtime
+    fi
+    sublog "set to $target"
+}
+
+configure_npm() {
+    command -v npm >/dev/null || { log "npm config"; sublog "npm not found, skipping"; return 0; }
+    log "Configuring npm global prefix (no-sudo installs)..."
+    local prefix_dir="$HOME/.npm-global" current
+    mkdir -p "$prefix_dir"
+    current=$(npm config get prefix 2>/dev/null || true)
+    if [[ "$current" == "$prefix_dir" ]]; then
+        sublog "prefix already set to $prefix_dir"
+        return 0
+    fi
+    npm config set prefix "$prefix_dir"
+    sublog "prefix set to $prefix_dir (PATH pickup is handled in ~/.zshenv)"
+}
+
+install_gemini_cli() {
+    command -v npm >/dev/null || { log "gemini-cli"; sublog "npm not found, skipping"; return 0; }
+    log "Installing gemini-cli locally..."
+    local location
+    if [[ "$OS" == macos ]]; then
+        location="$HOME/Library/Application Support/gemini-cli"
+    else
+        location="$HOME/.local/lib/gemini-cli"
+    fi
+    mkdir -p "$location"
+    if [[ ! -f "$location/package.json" ]]; then
+        sublog "npm init -y in $location"
+        (cd "$location" && npm init -y >/dev/null)
+    fi
+    if [[ -d "$location/node_modules/@google/gemini-cli" ]]; then
+        sublog "already installed at $location"
+    else
+        sublog "npm install @google/gemini-cli"
+        (cd "$location" && npm install @google/gemini-cli)
+    fi
+    # Remove any legacy global install — its deprecated prebuild-install chain
+    # is exactly what this local setup is designed to avoid.
+    if npm list -g --depth=0 2>/dev/null | grep -q '@google/gemini-cli'; then
+        sublog "removing global @google/gemini-cli"
+        npm uninstall -g @google/gemini-cli || true
+    fi
+}
+
+configure_tealdeer() {
+    command -v tldr >/dev/null || { log "tealdeer config"; sublog "tldr not found, skipping"; return 0; }
+    log "Configuring tealdeer (auto-update, zh_TW + en pages)..."
+    local config_dir
+    if [[ "$OS" == macos ]]; then
+        config_dir="$HOME/Library/Application Support/tealdeer"
+    else
+        config_dir="$HOME/.config/tealdeer"
+    fi
+    mkdir -p "$config_dir"
+    # Language preference is controlled by LANGUAGE=zh_TW:en in ~/.zshenv;
+    # tealdeer honors it at lookup time.
+    cat >"$config_dir/config.toml" <<'EOF'
+# Generated by myshell/scripts/install.
+# Page language is picked from $LANGUAGE (set to zh_TW:en in ~/.zshenv).
+
+[updates]
+auto_update = true
+auto_update_interval_hours = 720
+EOF
+    sublog "fetching page cache (LANGUAGE=zh_TW:en)..."
+    if ! LANGUAGE=zh_TW:en tldr --update >/dev/null 2>&1; then
+        sublog "tldr --update failed; will retry on first use"
+    fi
+}
+
 install_fonts() {
     confirm "Install ENS fonts from ent.tw/font?" || return 0
     local fonts_dir tmp urls
@@ -325,6 +483,11 @@ main() {
     deploy_dotfiles
     deploy_scripts
     configure_git
+    configure_locale
+    configure_timezone
+    configure_npm
+    install_gemini_cli
+    configure_tealdeer
     install_fonts
     set_login_shell
     log "Done. Start a new shell to pick up changes."
