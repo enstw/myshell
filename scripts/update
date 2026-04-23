@@ -42,4 +42,16 @@ if command -v npm &>/dev/null; then
     done
 fi
 
+# Claude Code
+if command -v claude &>/dev/null; then
+    echo "==> Upgrading Claude Code..."
+    claude upgrade
+fi
+
+# Claude Code gstack skill (global-git install)
+if [ -d "$HOME/.claude/skills/gstack/.git" ]; then
+    echo "==> Updating Claude gstack skill..."
+    (cd "$HOME/.claude/skills/gstack" && git pull --ff-only && ./setup)
+fi
+
 echo "==> Done."
