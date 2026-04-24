@@ -4,6 +4,13 @@ set -eu
 # myshell bootstrap — POSIX-sh stage 1.
 # Installs brew + modern bash (macOS) or refreshes apt (Ubuntu),
 # then hands off to the bash 5 installer.
+#
+# Two entry paths:
+#   1. from a checkout: ./bootstrap — uses the sibling scripts/install.
+#   2. piped: `curl -fsSL .../bootstrap | sh` — fetches the latest repo
+#      tarball into a tmp dir, runs stage 2 from there, cleans up after.
+
+REPO_TARBALL="https://github.com/enstw/myshell/archive/refs/heads/main.tar.gz"
 
 log() { printf '==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -61,12 +68,25 @@ main() {
         macos)  install_macos ;;
         ubuntu) install_ubuntu ;;
     esac
-    log "Stage 1 complete. Handing off to stage 2 (bash 5: $BASH5)..."
+
+    # Prefer a sibling scripts/install (local checkout) so dev iteration
+    # works. Fall back to downloading the latest tarball into a tmp dir —
+    # this is the curl|sh path and also the "tarball without exec bit" path.
+    # -f not -x: stage 2 is invoked via $BASH5, so the exec bit is optional.
     stage2="$(dirname "$0")/scripts/install"
-    # -f not -x: we invoke it via $BASH5, so the exec bit doesn't matter, and
-    # tarball extracts / rsync without -p / core.fileMode=false can drop it.
-    [ -f "$stage2" ] || die "stage 2 installer missing: $stage2"
-    exec "$BASH5" "$stage2" "$@"
+    if [ ! -f "$stage2" ]; then
+        log "No local scripts/install — fetching latest tarball..."
+        tmp=$(mktemp -d)
+        # Trap (not exec) handoff: we need the tmp dir to survive stage 2,
+        # and to be removed whether stage 2 succeeds, fails, or is Ctrl-C'd.
+        trap 'rm -rf "$tmp"' EXIT INT TERM
+        curl -fsSL "$REPO_TARBALL" | tar xz -C "$tmp"
+        stage2="$tmp/myshell-main/scripts/install"
+        [ -f "$stage2" ] || die "stage 2 installer missing after download: $stage2"
+    fi
+
+    log "Stage 1 complete. Handing off to stage 2 (bash 5: $BASH5)..."
+    "$BASH5" "$stage2" "$@"
 }
 
 main "$@"
