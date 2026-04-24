@@ -2,7 +2,9 @@
 set -euo pipefail
 
 # Update all installed package managers, plugins, and clean up.
-# Deployed to ~/bin/update during Converge.
+# Deployed to ~/bin/myshell-update by scripts/install; invoked via the
+# `u` alias. The namespaced name avoids clobbering any personal
+# ~/bin/update the user may already have.
 
 echo "==> Updating system packages..."
 

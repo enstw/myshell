@@ -206,7 +206,7 @@ command -v eza      >/dev/null && alias lt='eza --tree --icons'
 command -v bat      >/dev/null && alias cat='bat --paging=never'
 command -v qrencode >/dev/null && alias qrencode='qrencode -t ansiutf8 -r'
 command -v uv       >/dev/null && alias uup='uv tool upgrade --all'
-[[ -x "$HOME/bin/update" ]] && alias u="$HOME/bin/update"
+[[ -x "$HOME/bin/myshell-update" ]] && alias u="$HOME/bin/myshell-update"
 
 # gemini-cli: local npm install, OS-specific location. See script header.
 if [[ -d "$HOME/.local/lib/gemini-cli/node_modules/@google/gemini-cli" ]]; then
@@ -286,10 +286,20 @@ EOF
 deploy_scripts() {
     log "Deploying helper scripts and configs..."
 
-    sublog "~/bin/update"
+    sublog "~/bin/myshell-update"
     mkdir -p "$HOME/bin"
-    cp "$REPO_ROOT/scripts/update" "$HOME/bin/update"
-    chmod +x "$HOME/bin/update"
+    # Namespaced name (not ~/bin/update) so we don't clobber whatever
+    # personal `update` script the user might already have in ~/bin.
+    # The `u` alias in ~/.zsh/aliases.zsh is the user-facing interface.
+    cp "$REPO_ROOT/scripts/myshell-update" "$HOME/bin/myshell-update"
+    chmod +x "$HOME/bin/myshell-update"
+    # Clean up the old unnamespaced deploy from pre-rename installs —
+    # but only if it's ours (the old file carried this exact comment, so
+    # the match won't touch a user's personal ~/bin/update).
+    if [ -f "$HOME/bin/update" ] && \
+       grep -q 'Deployed to ~/bin/update during Converge' "$HOME/bin/update" 2>/dev/null; then
+        rm -f "$HOME/bin/update"
+    fi
 
     sublog "~/.config/starship.toml"
     mkdir -p "$HOME/.config"

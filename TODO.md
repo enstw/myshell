@@ -16,7 +16,7 @@ Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
 1. `batcat`/`fdfind` → `bat`/`fd` symlinks on Ubuntu.
 1. zinit cloned to `~/.local/share/zinit/zinit.git`.
 1. Writes `~/.zshenv`, `~/.zsh/{aliases,history,zoxide}.zsh`, `~/.zsh/motd.zsh` (Ubuntu), `~/.zshrc`.
-1. Copies `scripts/update` → `~/bin/update`.
+1. Copies `scripts/myshell-update` → `~/bin/myshell-update` (aliased to `u`).
 1. Fetches `starship.toml` and eza tokyonight `theme.yml`.
 1. Prompts for `git user.name` / `user.email`.
 1. Locale generation on Ubuntu: `en_US.UTF-8`, `en_GB.UTF-8`, `zh_TW.UTF-8`; default `LANG=zh_TW.UTF-8`, `LANGUAGE=zh_TW:en`.

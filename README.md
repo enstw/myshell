@@ -19,7 +19,7 @@ From a checkout (uses local `scripts/install`, good for iterating):
 Two stages:
 
 1. `bootstrap` — POSIX-sh. Installs Homebrew + bash 5 on macOS, or refreshes apt on Ubuntu, then `exec`s stage 2.
-1. `scripts/install` — bash 5. Installs apps, writes `~/.zshenv` + `~/.zsh/*.zsh` + `~/.zshrc`, deploys `scripts/update` to `~/bin/update`, configures locale/timezone/npm/tealdeer/gemini-cli, optionally installs fonts, offers to `chsh` to zsh.
+1. `scripts/install` — bash 5. Installs apps, writes `~/.zshenv` + `~/.zsh/*.zsh` + `~/.zshrc`, deploys `scripts/myshell-update` to `~/bin/myshell-update` (aliased to `u`), configures locale/timezone/npm/tealdeer/gemini-cli, optionally installs fonts, offers to `chsh` to zsh.
 
 Read the header banner at the top of `scripts/install` for the cross-cutting rules (Python-via-uv-only, locale, timezone, gemini-cli local install, zsh file layout).
 
@@ -35,5 +35,5 @@ Read the header banner at the top of `scripts/install` for the cross-cutting rul
 |------|---------|
 | `bootstrap` | Stage 1. Run this. |
 | `scripts/install` | Stage 2. The source of truth — read its header for design rules. |
-| `scripts/update` | Deployed to `~/bin/update`. Refreshes brew/apt/zinit/npm/claude/gstack. |
+| `scripts/myshell-update` | Deployed to `~/bin/myshell-update` (alias `u`). Refreshes brew/apt/zinit/npm/claude/gstack. |
 | `TODO.md` | What's deferred, what's untested. |
