@@ -429,38 +429,26 @@ EOF
 }
 
 install_fonts() {
-    confirm "Install ENS fonts from ent.tw/font?" || return 0
-    local fonts_dir tmp urls
+    # ENSFont.ttc is published as the single asset on the latest release of
+    # github.com/enstw/font. GitHub's /releases/latest/download/<name> URL is
+    # a stable redirect to that asset, so no jq/tarball dance is needed.
+    confirm "Install ENS fonts from github.com/enstw/font?" || return 0
+    local fonts_dir
     if [[ "$OS" == macos ]]; then
         fonts_dir="$HOME/Library/Fonts"
     else
         fonts_dir="$HOME/.local/share/fonts"
     fi
     mkdir -p "$fonts_dir"
-    tmp=$(mktemp -d)
-    # No `trap RETURN` for cleanup: RETURN traps persist across subsequent
-    # function returns, and the trap body expands "$tmp" at fire time. Once
-    # this function's local `tmp` is gone, `set -u` blows up on the next
-    # unrelated function return. Inline cleanup is simpler and correct.
-    sublog "Fetching release metadata..."
-    if curl -fsSL https://ent.tw/font -o "$tmp/release.json"; then
-        urls=$(jq -r '.assets[]? | select(.name | endswith(".ttf")) | .browser_download_url' "$tmp/release.json" 2>/dev/null || true)
-        if [[ -n "$urls" ]]; then
-            while IFS= read -r url; do
-                local name="${url##*/}"
-                sublog "Downloading $name"
-                curl -fsSL "$url" -o "$fonts_dir/$name"
-            done <<<"$urls"
-            if [[ "$OS" == ubuntu ]] && command -v fc-cache >/dev/null; then
-                fc-cache -f >/dev/null
-            fi
-        else
-            sublog "No .ttf assets found; skipping."
-        fi
-    else
-        sublog "Fetch failed; skipping."
+    sublog "Downloading ENSFont.ttc (latest release)..."
+    if ! curl -fsSL -o "$fonts_dir/ENSFont.ttc" \
+        https://github.com/enstw/font/releases/latest/download/ENSFont.ttc; then
+        sublog "Download failed; skipping."
+        return 0
     fi
-    rm -rf "$tmp"
+    if [[ "$OS" == ubuntu ]] && command -v fc-cache >/dev/null; then
+        fc-cache -f >/dev/null
+    fi
 }
 
 set_login_shell() {
@@ -483,11 +471,16 @@ set_login_shell() {
 
 main() {
     log "myshell stage 2 — $OS"
+    # Locale first: apt maintainer scripts shell out to perl with
+    # LANG=zh_TW.UTF-8 inherited from the caller's env. If that locale
+    # hasn't been generated yet, every subsequent apt install prints
+    # `perl: warning: Setting locale failed`. Generating locales before
+    # any package work silences the warnings.
+    configure_locale
     install_apps
     deploy_dotfiles
     deploy_scripts
     configure_git
-    configure_locale
     configure_timezone
     configure_npm
     install_gemini_cli
