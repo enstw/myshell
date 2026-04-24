@@ -50,10 +50,10 @@ if command -v claude &>/dev/null; then
     claude upgrade
 fi
 
-# Claude Code gstack skill (global-git install)
-if [ -d "$HOME/.claude/skills/gstack/.git" ]; then
+# Claude Code gstack skill — use the skill's own updater (same as /gstack-upgrade).
+if [ -x "$HOME/.claude/skills/gstack/bin/gstack-update-check" ]; then
     echo "==> Updating Claude gstack skill..."
-    (cd "$HOME/.claude/skills/gstack" && git pull --ff-only && ./setup)
+    "$HOME/.claude/skills/gstack/bin/gstack-update-check" --force || true
 fi
 
 echo "==> Done."
