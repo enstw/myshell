@@ -63,7 +63,9 @@ main() {
     esac
     log "Stage 1 complete. Handing off to stage 2 (bash 5: $BASH5)..."
     stage2="$(dirname "$0")/scripts/install"
-    [ -x "$stage2" ] || die "stage 2 installer missing: $stage2"
+    # -f not -x: we invoke it via $BASH5, so the exec bit doesn't matter, and
+    # tarball extracts / rsync without -p / core.fileMode=false can drop it.
+    [ -f "$stage2" ] || die "stage 2 installer missing: $stage2"
     exec "$BASH5" "$stage2" "$@"
 }
 

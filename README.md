@@ -4,8 +4,17 @@ Shell environment setup for macOS and Ubuntu. One installer, idempotent, safe to
 
 ## Usage
 
+If you already have the repo checked out:
+
 ```sh
 ./bootstrap
+```
+
+On a bare box with no git (Ubuntu Server, fresh VM), grab the tarball first:
+
+```sh
+curl -fsSL https://github.com/enstw/myshell/archive/refs/heads/main.tar.gz | tar xz
+cd myshell-main && ./bootstrap
 ```
 
 Two stages:
