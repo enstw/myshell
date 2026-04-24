@@ -438,25 +438,29 @@ install_fonts() {
     fi
     mkdir -p "$fonts_dir"
     tmp=$(mktemp -d)
-    trap 'rm -rf "$tmp"' RETURN
+    # No `trap RETURN` for cleanup: RETURN traps persist across subsequent
+    # function returns, and the trap body expands "$tmp" at fire time. Once
+    # this function's local `tmp` is gone, `set -u` blows up on the next
+    # unrelated function return. Inline cleanup is simpler and correct.
     sublog "Fetching release metadata..."
-    if ! curl -fsSL https://ent.tw/font -o "$tmp/release.json"; then
+    if curl -fsSL https://ent.tw/font -o "$tmp/release.json"; then
+        urls=$(jq -r '.assets[]? | select(.name | endswith(".ttf")) | .browser_download_url' "$tmp/release.json" 2>/dev/null || true)
+        if [[ -n "$urls" ]]; then
+            while IFS= read -r url; do
+                local name="${url##*/}"
+                sublog "Downloading $name"
+                curl -fsSL "$url" -o "$fonts_dir/$name"
+            done <<<"$urls"
+            if [[ "$OS" == ubuntu ]] && command -v fc-cache >/dev/null; then
+                fc-cache -f >/dev/null
+            fi
+        else
+            sublog "No .ttf assets found; skipping."
+        fi
+    else
         sublog "Fetch failed; skipping."
-        return 0
     fi
-    urls=$(jq -r '.assets[]? | select(.name | endswith(".ttf")) | .browser_download_url' "$tmp/release.json" 2>/dev/null || true)
-    if [[ -z "$urls" ]]; then
-        sublog "No .ttf assets found; skipping."
-        return 0
-    fi
-    while IFS= read -r url; do
-        local name="${url##*/}"
-        sublog "Downloading $name"
-        curl -fsSL "$url" -o "$fonts_dir/$name"
-    done <<<"$urls"
-    if [[ "$OS" == ubuntu ]] && command -v fc-cache >/dev/null; then
-        fc-cache -f >/dev/null
-    fi
+    rm -rf "$tmp"
 }
 
 set_login_shell() {
