@@ -82,12 +82,13 @@ install_apps() {
         macos)  install_apps_macos ;;
         ubuntu) install_apps_ubuntu ;;
     esac
+    install_bun
     install_zinit
 }
 
 install_apps_macos() {
     local formulae=(
-        git zsh jq tmux fzf ripgrep sevenzip imagemagick ffmpeg uv node bun
+        git zsh jq tmux fzf ripgrep sevenzip imagemagick ffmpeg uv node
         bat eza fd zoxide starship tealdeer glow qrencode
         watch
     )
@@ -111,7 +112,6 @@ install_apps_ubuntu() {
     install_starship_ubuntu
     install_eza_ubuntu
     install_glow_ubuntu
-    install_bun_ubuntu
 }
 
 install_uv_ubuntu() {
@@ -151,11 +151,12 @@ install_glow_ubuntu() {
     sudo apt-get install -y glow
 }
 
-install_bun_ubuntu() {
-    # Needed by the Claude gstack skill's setup script. No apt package; the
-    # upstream installer drops the binary + completions into ~/.bun.
-    # PATH is picked up via ~/.zshenv; completions are sourced from ~/.zsh/bun.zsh.
-    [[ -x "$HOME/.bun/bin/bun" ]] && return 0
+install_bun() {
+    # bun isn't in default Homebrew (requires the oven-sh/bun tap) and isn't
+    # in apt, so use the upstream installer on both OSes. Drops binary +
+    # completions into ~/.bun. PATH is picked up via ~/.zshenv; completions
+    # are sourced from ~/.zsh/bun.zsh. Needed by the gstack skill's setup.
+    command -v bun >/dev/null && return 0
     sublog "Installing bun (bun.sh installer)..."
     curl -fsSL https://bun.sh/install | bash
 }
