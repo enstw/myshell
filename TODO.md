@@ -22,7 +22,7 @@ Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
 1. Locale generation on Ubuntu: `en_US.UTF-8`, `en_GB.UTF-8`, `zh_TW.UTF-8`; default `LANG=zh_TW.UTF-8`, `LANGUAGE=zh_TW:en`.
 1. Timezone set to `Asia/Taipei` (systemsetup on mac; timedatectl or `/etc/timezone` fallback on Ubuntu).
 1. npm global prefix set to `~/.npm-global` (no-sudo installs); PATH pickup already handled in `~/.zshenv`.
-1. gemini-cli installed locally (OS-specific path — see install header); `gemini` alias wired via `npx --prefix`; any global `@google/gemini-cli` removed.
+1. AI agents prompt — pick `all`, `none`, or comma-separated subset of `claude,gemini,codex`. All install globally via npm into `~/.npm-global` (gemini's self-update only works on global installs).
 1. tealdeer config written (`auto_update = true`) and page cache fetched with `LANGUAGE=zh_TW:en`.
 1. Opt-in ENS font install from `ent.tw/font` (assumes redirect to GitHub releases JSON).
 1. Adds zsh to `/etc/shells`, offers `chsh`.

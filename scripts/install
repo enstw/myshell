@@ -24,10 +24,11 @@ set -euo pipefail
 #
 # - Timezone: Asia/Taipei.
 #
-# - gemini-cli: install locally, not `npm install -g`. The global package
-#   drags in deprecated prebuild-install. Paths: macOS ~/Library/Application
-#   Support/gemini-cli; Ubuntu ~/.local/lib/gemini-cli. `gemini` alias wraps
-#   `npx --prefix <path>`.
+# - AI agents: optional, user picks from Claude Code, Gemini CLI, Codex.
+#   All three install globally via npm into ~/.npm-global. Gemini's built-in
+#   self-update only works on a global install (it tries to npm-update its own
+#   package), so the previous "install locally to dodge deprecated
+#   prebuild-install" workaround is gone.
 #
 # - tealdeer: the Rust `tealdeer`, not the Python `tldr`. Page language comes
 #   from $LANGUAGE (tealdeer has no language option of its own).
@@ -220,12 +221,6 @@ command -v qrencode >/dev/null && alias qrencode='qrencode -t ansiutf8 -r'
 command -v uv       >/dev/null && alias uup='uv tool upgrade --all'
 [[ -x "$HOME/bin/myshell-update" ]] && alias u="$HOME/bin/myshell-update"
 
-# gemini-cli: local npm install, OS-specific location. See script header.
-if [[ -d "$HOME/.local/lib/gemini-cli/node_modules/@google/gemini-cli" ]]; then
-    alias gemini='npx --prefix "$HOME/.local/lib/gemini-cli" gemini'
-elif [[ -d "$HOME/Library/Application Support/gemini-cli/node_modules/@google/gemini-cli" ]]; then
-    alias gemini='npx --prefix "$HOME/Library/Application Support/gemini-cli" gemini'
-fi
 EOF
 
     sublog "~/.zsh/history.zsh"
@@ -402,32 +397,60 @@ configure_npm() {
     sublog "prefix set to $prefix_dir (PATH pickup is handled in ~/.zshenv)"
 }
 
+install_agents() {
+    command -v npm >/dev/null || { log "AI agents"; sublog "npm not found, skipping"; return 0; }
+    log "AI agents — Claude Code, Gemini CLI, Codex"
+    sublog "Pick comma-separated names, 'all', or 'none'."
+    local choice
+    choice=$(ask "Install which agents? (all/none/claude,gemini,codex)" "all")
+    case "$choice" in
+        none|"") sublog "skipping all agents"; return 0 ;;
+        all) install_claude_code; install_gemini_cli; install_codex ;;
+        *)
+            local agent
+            for agent in $(printf '%s\n' "$choice" | tr ',' ' '); do
+                case "$agent" in
+                    claude|claude-code) install_claude_code ;;
+                    gemini|gemini-cli)  install_gemini_cli ;;
+                    codex)              install_codex ;;
+                    "") ;;
+                    *) sublog "unknown agent '$agent' (skipping)" ;;
+                esac
+            done
+            ;;
+    esac
+}
+
+install_claude_code() {
+    log "Installing Claude Code..."
+    if npm list -g --depth=0 2>/dev/null | grep -q '@anthropic-ai/claude-code'; then
+        sublog "already installed (npm global) — skipping"
+        return 0
+    fi
+    sublog "npm install -g @anthropic-ai/claude-code"
+    npm install -g @anthropic-ai/claude-code
+}
+
+install_codex() {
+    log "Installing OpenAI Codex CLI..."
+    if npm list -g --depth=0 2>/dev/null | grep -q '@openai/codex'; then
+        sublog "already installed (npm global) — skipping"
+        return 0
+    fi
+    sublog "npm install -g @openai/codex"
+    npm install -g @openai/codex
+}
+
 install_gemini_cli() {
-    command -v npm >/dev/null || { log "gemini-cli"; sublog "npm not found, skipping"; return 0; }
-    log "Installing gemini-cli locally..."
-    local location
-    if [[ "$OS" == macos ]]; then
-        location="$HOME/Library/Application Support/gemini-cli"
-    else
-        location="$HOME/.local/lib/gemini-cli"
-    fi
-    mkdir -p "$location"
-    if [[ ! -f "$location/package.json" ]]; then
-        sublog "npm init -y in $location"
-        (cd "$location" && npm init -y >/dev/null)
-    fi
-    if [[ -d "$location/node_modules/@google/gemini-cli" ]]; then
-        sublog "already installed at $location"
-    else
-        sublog "npm install @google/gemini-cli"
-        (cd "$location" && npm install @google/gemini-cli)
-    fi
-    # Remove any legacy global install — its deprecated prebuild-install chain
-    # is exactly what this local setup is designed to avoid.
+    log "Installing Gemini CLI..."
+    # Global install — gemini's self-update path requires it. Local installs
+    # under npx --prefix can't update themselves.
     if npm list -g --depth=0 2>/dev/null | grep -q '@google/gemini-cli'; then
-        sublog "removing global @google/gemini-cli"
-        npm uninstall -g @google/gemini-cli || true
+        sublog "already installed (npm global) — skipping"
+        return 0
     fi
+    sublog "npm install -g @google/gemini-cli"
+    npm install -g @google/gemini-cli
 }
 
 configure_tealdeer() {
@@ -511,7 +534,7 @@ main() {
     configure_git
     configure_timezone
     configure_npm
-    install_gemini_cli
+    install_agents
     configure_tealdeer
     install_fonts
     set_login_shell

@@ -41,15 +41,32 @@ brew_prefix() {
 
 install_macos() {
     log "macOS detected."
-    if ! command -v brew >/dev/null 2>&1; then
+    # `command -v brew` only finds it once PATH is set up. On a fresh shell
+    # immediately after the Homebrew installer runs, brew is on disk but not
+    # yet in PATH — fall back to the known prefix paths so we don't reinstall.
+    brew_bin=""
+    if command -v brew >/dev/null 2>&1; then
+        brew_bin=$(command -v brew)
+    elif [ -x /opt/homebrew/bin/brew ]; then
+        brew_bin=/opt/homebrew/bin/brew
+    elif [ -x /usr/local/bin/brew ]; then
+        brew_bin=/usr/local/bin/brew
+    fi
+
+    if [ -z "$brew_bin" ]; then
         log "Installing Homebrew — may prompt for password and open a Command Line Tools dialog."
         NONINTERACTIVE=1 /bin/bash -c \
             "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        brew_bin="$(brew_prefix)/bin/brew"
+    else
+        log "Homebrew already installed ($brew_bin) — skipping."
     fi
-    eval "$("$(brew_prefix)/bin/brew" shellenv)"
+    eval "$("$brew_bin" shellenv)"
     if ! brew list --formula bash >/dev/null 2>&1; then
         log "Installing bash 5..."
         brew install bash
+    else
+        log "bash 5 already installed — skipping."
     fi
     BASH5="$(brew --prefix)/bin/bash"
 }
