@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 # =============================================================================
 # myshell stage 2 installer (bash 5)
@@ -58,6 +58,7 @@ export PATH="$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 log()     { printf '\n==> %s\n' "$*"; }
 sublog()  { printf '    %s\n' "$*"; }
 die()     { printf 'error: %s\n' "$*" >&2; exit 1; }
+trap 'rc=$?; printf "error: failed at line %s: %s (exit %s)\n" "$LINENO" "$BASH_COMMAND" "$rc" >&2; exit "$rc"' ERR
 
 # ask PROMPT [DEFAULT] — read a line from tty, echo answer (or default if empty).
 ask() {
@@ -89,12 +90,16 @@ install_apps() {
 
 install_apps_macos() {
     local formulae=(
-        git zsh jq tmux fzf ripgrep sevenzip imagemagick ffmpeg uv node
+        git zsh jq tmux fzf ripgrep sevenzip imagemagick ffmpeg uv
+        ca-certificates node
         bat eza fd zoxide starship tealdeer glow qrencode
         watch
     )
     sublog "brew install ${formulae[*]}"
     brew install "${formulae[@]}"
+    # On a fresh Mac this script may install Homebrew and Node in the same
+    # session. Make the CA bundle setup explicit before npm talks TLS.
+    brew postinstall ca-certificates >/dev/null 2>&1 || true
 }
 
 install_apps_ubuntu() {
@@ -159,7 +164,17 @@ install_bun() {
     # are sourced from ~/.zsh/bun.zsh. Needed by the gstack skill's setup.
     command -v bun >/dev/null && return 0
     sublog "Installing bun (bun.sh installer)..."
-    curl -fsSL https://bun.sh/install | bash
+    if ! curl -fsSL https://bun.sh/install | bash; then
+        sublog "bun install failed; continuing without bun"
+        return 0
+    fi
+    if [[ -x "$HOME/.bun/bin/bun" ]]; then
+        sublog "bun installed to $HOME/.bun/bin/bun"
+    elif command -v bun >/dev/null; then
+        sublog "bun installed ($(command -v bun))"
+    else
+        sublog "bun installer exited successfully, but bun was not found; continuing"
+    fi
 }
 
 install_zinit() {
@@ -399,26 +414,79 @@ configure_npm() {
 
 install_agents() {
     command -v npm >/dev/null || { log "AI agents"; sublog "npm not found, skipping"; return 0; }
+    if ! npm_registry_ok; then
+        log "AI agents — Claude Code, Gemini CLI, Codex"
+        sublog "npm cannot verify the registry TLS certificate; skipping optional agent installs."
+        sublog "Retry later with: npm install -g @anthropic-ai/claude-code @google/gemini-cli @openai/codex"
+        if [[ "$OS" == macos ]]; then
+            sublog "If it still fails: brew reinstall ca-certificates node && brew postinstall ca-certificates"
+        fi
+        return 0
+    fi
     log "AI agents — Claude Code, Gemini CLI, Codex"
-    sublog "Pick comma-separated names, 'all', or 'none'."
+    sublog "Pick a number: 0 none, 1 Claude, 2 Codex, 3 Claude+Codex, 4 Gemini, 5 Gemini+Claude, 6 Gemini+Codex, 7 all."
+    sublog "Names still work too: all, none, or comma-separated claude,gemini,codex."
     local choice
-    choice=$(ask "Install which agents? (all/none/claude,gemini,codex)" "all")
+    choice=$(ask "Install which agents?" "7")
     case "$choice" in
-        none|"") sublog "skipping all agents"; return 0 ;;
-        all) install_claude_code; install_gemini_cli; install_codex ;;
+        0|none|"") sublog "skipping all agents"; return 0 ;;
+        7|all)
+            install_agent "Claude Code" install_claude_code
+            install_agent "Gemini CLI" install_gemini_cli
+            install_agent "OpenAI Codex CLI" install_codex
+            ;;
+        1|claude|claude-code)
+            install_agent "Claude Code" install_claude_code
+            ;;
+        2|codex)
+            install_agent "OpenAI Codex CLI" install_codex
+            ;;
+        3)
+            install_agent "Claude Code" install_claude_code
+            install_agent "OpenAI Codex CLI" install_codex
+            ;;
+        4|gemini|gemini-cli)
+            install_agent "Gemini CLI" install_gemini_cli
+            ;;
+        5)
+            install_agent "Gemini CLI" install_gemini_cli
+            install_agent "Claude Code" install_claude_code
+            ;;
+        6)
+            install_agent "Gemini CLI" install_gemini_cli
+            install_agent "OpenAI Codex CLI" install_codex
+            ;;
         *)
             local agent
             for agent in $(printf '%s\n' "$choice" | tr ',' ' '); do
                 case "$agent" in
-                    claude|claude-code) install_claude_code ;;
-                    gemini|gemini-cli)  install_gemini_cli ;;
-                    codex)              install_codex ;;
+                    claude|claude-code) install_agent "Claude Code" install_claude_code ;;
+                    gemini|gemini-cli)  install_agent "Gemini CLI" install_gemini_cli ;;
+                    codex)              install_agent "OpenAI Codex CLI" install_codex ;;
                     "") ;;
                     *) sublog "unknown agent '$agent' (skipping)" ;;
                 esac
             done
             ;;
     esac
+}
+
+npm_registry_ok() {
+    local registry
+    registry=$(npm config get registry 2>/dev/null || true)
+    [[ -n "$registry" && "$registry" != undefined ]] || registry="https://registry.npmjs.org/"
+    sublog "checking npm registry TLS ($registry)"
+    npm ping --registry="$registry" >/dev/null 2>&1
+}
+
+install_agent() {
+    local label="$1"
+    shift
+    if "$@"; then
+        return 0
+    fi
+    sublog "$label install failed; continuing with the rest of bootstrap"
+    return 0
 }
 
 install_claude_code() {
