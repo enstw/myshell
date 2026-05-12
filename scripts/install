@@ -215,6 +215,7 @@ fi
 unset LC_ALL
 export LANG=zh_TW.UTF-8
 export LANGUAGE=zh_TW:en
+export COLORTERM=truecolor
 
 umask 0077
 
@@ -603,6 +604,18 @@ main() {
     configure_timezone
     configure_npm
     install_agents
+    configure_tealdeer
+    install_fonts
+    set_login_shell
+    log "Done. Start a new shell to pick up changes."
+}
+
+main "$@"
+pts
+    configure_git
+    configure_timezone
+    configure_npm
+    install_gemini_cli
     configure_tealdeer
     install_fonts
     set_login_shell
