@@ -571,6 +571,26 @@ install_fonts() {
     fi
 }
 
+configure_terminal_profile() {
+    if [[ "$OS" != macos ]]; then
+        return 0
+    fi
+    local profile_path="$REPO_ROOT/assets/tokyo-night.terminal"
+    if [[ ! -f "$profile_path" ]]; then
+        sublog "Terminal profile $profile_path not found, skipping."
+        return 0
+    fi
+    log "Configuring Terminal profile..."
+    sublog "Installing tokyo-night profile..."
+    # Open the profile to import it into Terminal
+    open "$profile_path"
+    # Allow a brief moment for it to be registered
+    sleep 1
+    sublog "Setting tokyo-night as default..."
+    defaults write com.apple.Terminal "Default Window Settings" -string "tokyo-night"
+    defaults write com.apple.Terminal "Startup Window Settings" -string "tokyo-night"
+}
+
 set_login_shell() {
     log "Login shell..."
     local zsh_path
@@ -606,20 +626,10 @@ main() {
     install_agents
     configure_tealdeer
     install_fonts
+    configure_terminal_profile
     set_login_shell
     log "Done. Start a new shell to pick up changes."
 }
 
 main "$@"
-pts
-    configure_git
-    configure_timezone
-    configure_npm
-    install_gemini_cli
-    configure_tealdeer
-    install_fonts
-    set_login_shell
-    log "Done. Start a new shell to pick up changes."
-}
 
-main "$@"
