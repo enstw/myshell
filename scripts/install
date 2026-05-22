@@ -112,14 +112,14 @@ install_apps() {
 install_apps_macos() {
     local formulae=(
         git zsh jq tmux fzf ripgrep sevenzip uv
-        ca-certificates
+        ca-certificates node
         bat eza fd zoxide starship tealdeer glow qrencode
         watch
     )
     sublog "brew install ${formulae[*]}"
     brew install "${formulae[@]}"
-    # Make CA bundle explicit in case later steps (or a user-installed node)
-    # talk TLS in this same shell session.
+    # On a fresh Mac this script may install Homebrew and Node in the same
+    # session. Make the CA bundle setup explicit before npm talks TLS.
     brew postinstall ca-certificates >/dev/null 2>&1 || true
 }
 
@@ -131,7 +131,7 @@ install_apps_ubuntu() {
         $SUDO apt-get install -y \
             git zsh jq tmux fzf ripgrep 7zip curl ca-certificates \
             bat fd-find zoxide tealdeer qrencode build-essential wget gpg \
-            npm locales tzdata
+            locales tzdata
     fi
 
     # Ubuntu names bat/fd differently; symlink into ~/.local/bin so aliases find them.
@@ -141,12 +141,19 @@ install_apps_ubuntu() {
 
     install_uv_ubuntu
     install_starship_ubuntu
+    install_node_ubuntu
     if [[ "$NO_SUDO" == "1" ]]; then
         sublog "no sudo — skipping eza/glow (require apt-repo setup under /etc)"
     else
         install_eza_ubuntu
         install_glow_ubuntu
     fi
+}
+
+install_node_ubuntu() {
+    # Node.js LTS via the official tarball (no apt deps, works under NO_SUDO).
+    # The helper itself decides install-vs-upgrade-vs-skip; we just invoke it.
+    bash "$REPO_ROOT/scripts/install-node-lts"
 }
 
 install_uv_ubuntu() {
@@ -351,6 +358,12 @@ deploy_scripts() {
     # The `u` alias in ~/.zsh/aliases.zsh is the user-facing interface.
     cp "$REPO_ROOT/scripts/myshell-update" "$HOME/bin/myshell-update"
     chmod +x "$HOME/bin/myshell-update"
+
+    sublog "~/bin/myshell-install-node-lts"
+    # Deployed so myshell-update can refresh the tarball without needing the
+    # repo checked out.
+    cp "$REPO_ROOT/scripts/install-node-lts" "$HOME/bin/myshell-install-node-lts"
+    chmod +x "$HOME/bin/myshell-install-node-lts"
     # Clean up the old unnamespaced deploy from pre-rename installs —
     # but only if it's ours (the old file carried this exact comment, so
     # the match won't touch a user's personal ~/bin/update).

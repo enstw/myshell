@@ -30,6 +30,14 @@ if command -v zinit &>/dev/null; then
     zsh -ic 'zinit self-update; zinit update --all'
 fi
 
+# Node.js LTS tarball — refresh if we own the ~/.local/share/node install.
+# The helper self-gates: no-op when system node is in use, upgrade in place
+# when we previously installed the tarball.
+if [ -x "$HOME/bin/myshell-install-node-lts" ]; then
+    echo "==> Checking Node.js LTS tarball..."
+    "$HOME/bin/myshell-install-node-lts" || true
+fi
+
 # npm
 if command -v npm &>/dev/null; then
     echo "==> Updating npm global packages..."
