@@ -26,6 +26,7 @@ Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
 1. tealdeer config written (`auto_update = true`) and page cache fetched with `LANGUAGE=zh_TW:en`.
 1. Opt-in ENS font install from `ent.tw/font` (assumes redirect to GitHub releases JSON).
 1. Adds zsh to `/etc/shells`, offers `chsh`.
+1. Root + no-sudo containers: both stages now route privileged commands through a `$SUDO` shim that is empty when `EUID==0`, `sudo` otherwise, and fails fast with a clear message if non-root and sudo is missing.
 
 ## Deferred (not yet in `scripts/install`)
 
@@ -38,7 +39,7 @@ Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
 1. Ubuntu target is 22.04+ (package names like `bat`, `7zip`, `tealdeer`).
 1. `ent.tw/font` is assumed to redirect to the GitHub releases JSON — untested from the script.
 1. `chsh` on macOS prompts for the user's login password; acceptable but unavoidable.
-1. `sudo apt-get update` runs in stage 1 on Ubuntu, but if the minimal image has no sources configured at all, it'll fail — haven't handled that case.
+1. Stage 1 still needs `apt-get update` to succeed; if a minimal image has no sources configured at all, it'll fail — haven't handled that case. (Missing-sudo on root is now handled via the `$SUDO` shim.)
 1. 2026-05-10 fresh Mac bootstrap hit `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` during npm agent installs, and another run appeared to stop around the Bun installer without the final `Done` line. Stage 2 now forces Homebrew CA postinstall, makes Bun and npm agents fail soft, and prints an `ERR` trap diagnostic for unexpected exits.
 
 ## How to resume / test
@@ -48,6 +49,11 @@ Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
    docker run --rm -it -v "$PWD":/myshell ubuntu:24.04 bash -c \
      'apt-get update && apt-get install -y sudo curl git && useradd -m -s /bin/bash t && \
       echo "t ALL=(ALL) NOPASSWD:ALL" >>/etc/sudoers && su - t -c "cp -r /myshell ~/myshell && ~/myshell/bootstrap"'
+   ```
+1. Root + no-sudo container (exercises the `$SUDO` shim):
+   ```sh
+   docker run --rm -it -v "$PWD":/myshell ubuntu:24.04 bash -c \
+     'apt-get update && apt-get install -y curl git && cp -r /myshell /root/myshell && /root/myshell/bootstrap'
    ```
 1. Fresh Mac: harder to sandbox; test on a spare account or VM.
 1. To iterate fast on stage 2 only: run `scripts/install` directly under an existing bash 5.

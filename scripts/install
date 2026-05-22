@@ -60,6 +60,17 @@ sublog()  { printf '    %s\n' "$*"; }
 die()     { printf 'error: %s\n' "$*" >&2; exit 1; }
 trap 'rc=$?; printf "error: failed at line %s: %s (exit %s)\n" "$LINENO" "$BASH_COMMAND" "$rc" >&2; exit "$rc"' ERR
 
+# sudo shim: no-op when already root (minimal containers often ship without
+# sudo installed). Non-root still requires sudo on PATH.
+if [[ $EUID -eq 0 ]]; then
+    SUDO=""
+elif command -v sudo >/dev/null 2>&1; then
+    SUDO=sudo
+else
+    echo "error: must run as root, or install sudo first" >&2
+    exit 1
+fi
+
 # ask PROMPT [DEFAULT] — read a line from tty, echo answer (or default if empty).
 ask() {
     local prompt="$1" default="${2:-}" reply
@@ -104,7 +115,7 @@ install_apps_macos() {
 
 install_apps_ubuntu() {
     sublog "apt base packages..."
-    sudo apt-get install -y \
+    $SUDO apt-get install -y \
         git zsh jq tmux fzf ripgrep 7zip imagemagick ffmpeg curl ca-certificates \
         bat fd-find zoxide tealdeer qrencode build-essential wget gpg \
         nodejs npm locales tzdata
@@ -135,26 +146,26 @@ install_starship_ubuntu() {
 install_eza_ubuntu() {
     command -v eza >/dev/null && return 0
     sublog "Installing eza (gierens apt repo)..."
-    sudo mkdir -p /etc/apt/keyrings
+    $SUDO mkdir -p /etc/apt/keyrings
     wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc \
-        | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
+        | $SUDO gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
     echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" \
-        | sudo tee /etc/apt/sources.list.d/gierens.list >/dev/null
-    sudo chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
-    sudo apt-get update
-    sudo apt-get install -y eza
+        | $SUDO tee /etc/apt/sources.list.d/gierens.list >/dev/null
+    $SUDO chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
+    $SUDO apt-get update
+    $SUDO apt-get install -y eza
 }
 
 install_glow_ubuntu() {
     command -v glow >/dev/null && return 0
     sublog "Installing glow (charm apt repo)..."
-    sudo mkdir -p /etc/apt/keyrings
+    $SUDO mkdir -p /etc/apt/keyrings
     curl -fsSL https://repo.charm.sh/apt/gpg.key \
-        | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
+        | $SUDO gpg --dearmor -o /etc/apt/keyrings/charm.gpg
     echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" \
-        | sudo tee /etc/apt/sources.list.d/charm.list >/dev/null
-    sudo apt-get update
-    sudo apt-get install -y glow
+        | $SUDO tee /etc/apt/sources.list.d/charm.list >/dev/null
+    $SUDO apt-get update
+    $SUDO apt-get install -y glow
 }
 
 install_bun() {
@@ -367,10 +378,10 @@ configure_locale() {
     log "Generating locales (en_US, en_GB, zh_TW — .UTF-8)..."
     if ! command -v locale-gen >/dev/null; then
         sublog "locale-gen missing; installing 'locales'..."
-        sudo apt-get install -y locales
+        $SUDO apt-get install -y locales
     fi
-    sudo locale-gen en_US.UTF-8 en_GB.UTF-8 zh_TW.UTF-8 >/dev/null
-    sudo update-locale LANG=zh_TW.UTF-8 LANGUAGE=zh_TW:en >/dev/null
+    $SUDO locale-gen en_US.UTF-8 en_GB.UTF-8 zh_TW.UTF-8 >/dev/null
+    $SUDO update-locale LANG=zh_TW.UTF-8 LANGUAGE=zh_TW:en >/dev/null
     sublog "default LANG=zh_TW.UTF-8 LANGUAGE=zh_TW:en"
 }
 
@@ -378,23 +389,23 @@ configure_timezone() {
     log "Setting timezone to Asia/Taipei..."
     local target=Asia/Taipei current
     if [[ "$OS" == macos ]]; then
-        current=$(sudo systemsetup -gettimezone 2>/dev/null | awk -F': ' '{print $2}' || true)
+        current=$($SUDO systemsetup -gettimezone 2>/dev/null | awk -F': ' '{print $2}' || true)
         if [[ "$current" == "$target" ]]; then
             sublog "already $target"
             return 0
         fi
-        sudo systemsetup -settimezone "$target" >/dev/null
+        $SUDO systemsetup -settimezone "$target" >/dev/null
     elif command -v timedatectl >/dev/null && timedatectl status >/dev/null 2>&1; then
         current=$(timedatectl show --property=Timezone --value 2>/dev/null || true)
         if [[ "$current" == "$target" ]]; then
             sublog "already $target"
             return 0
         fi
-        sudo timedatectl set-timezone "$target"
+        $SUDO timedatectl set-timezone "$target"
     else
         # Container / no systemd: write /etc/timezone + relink /etc/localtime.
-        echo "$target" | sudo tee /etc/timezone >/dev/null
-        sudo ln -sf "/usr/share/zoneinfo/$target" /etc/localtime
+        echo "$target" | $SUDO tee /etc/timezone >/dev/null
+        $SUDO ln -sf "/usr/share/zoneinfo/$target" /etc/localtime
     fi
     sublog "set to $target"
 }
@@ -601,8 +612,8 @@ set_login_shell() {
         return 0
     fi
     if ! grep -qx "$zsh_path" /etc/shells 2>/dev/null; then
-        sublog "Adding $zsh_path to /etc/shells (sudo)..."
-        echo "$zsh_path" | sudo tee -a /etc/shells >/dev/null
+        sublog "Adding $zsh_path to /etc/shells..."
+        echo "$zsh_path" | $SUDO tee -a /etc/shells >/dev/null
     fi
     if confirm "Set login shell to $zsh_path?"; then
         chsh -s "$zsh_path"

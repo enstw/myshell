@@ -15,6 +15,16 @@ REPO_TARBALL="https://github.com/enstw/myshell/archive/refs/heads/main.tar.gz"
 log() { printf '==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
+# sudo shim: become a no-op when already root (minimal containers often ship
+# without sudo installed). Non-root still requires sudo on PATH.
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
+elif command -v sudo >/dev/null 2>&1; then
+    SUDO="sudo"
+else
+    die "must run as root, or install sudo first"
+fi
+
 detect_os() {
     case "$(uname -s)" in
         Darwin) echo macos ;;
@@ -73,8 +83,8 @@ install_macos() {
 
 install_ubuntu() {
     log "Ubuntu detected."
-    log "Refreshing apt index (may prompt for sudo password)..."
-    sudo apt-get update
+    log "Refreshing apt index${SUDO:+ (may prompt for sudo password)}..."
+    $SUDO apt-get update
     # Ubuntu 20.04+ ships bash 5 by default.
     BASH5=/bin/bash
 }
