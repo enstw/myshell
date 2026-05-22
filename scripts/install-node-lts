@@ -34,18 +34,22 @@ if [[ ! -d "$dest" ]] && command -v node >/dev/null; then
     exit 0
 fi
 
-# Latest LTS tarball filename from the directory listing. Using .tar.gz
-# (not .tar.xz) so minimal containers without xz-utils still work.
-tarball=$(curl -fsSL https://nodejs.org/dist/latest-lts/ \
-    | grep -oE "node-v[0-9]+\.[0-9]+\.[0-9]+-${arch}\.tar\.gz" \
-    | head -1 || true)
-if [[ -z "$tarball" ]]; then
-    sub "could not determine latest Node LTS tarball; skipping"
+# Latest LTS version from the official release index. index.json is one
+# record per line sorted newest-first; LTS releases have a quoted codename
+# ("lts":"Krypton") while current releases have "lts":false, so the first
+# line matching a quoted lts field is the newest LTS. Using .tar.gz (not
+# .tar.xz) so minimal containers without xz-utils still work.
+index_line=$(curl -fsSL https://nodejs.org/dist/index.json 2>/dev/null \
+    | grep -m1 '"lts":"' || true)
+latest_ver=""
+if [[ $index_line =~ \"version\":\"(v[0-9]+\.[0-9]+\.[0-9]+)\" ]]; then
+    latest_ver="${BASH_REMATCH[1]}"
+fi
+if [[ -z "$latest_ver" ]]; then
+    sub "could not determine latest Node LTS version; skipping"
     exit 0
 fi
-# node-vX.Y.Z-linux-x64.tar.gz  ->  vX.Y.Z
-latest_ver="${tarball#node-}"
-latest_ver="${latest_ver%-${arch}.tar.gz}"
+tarball="node-${latest_ver}-${arch}.tar.gz"
 
 current_ver=""
 [[ -x "$dest/bin/node" ]] && current_ver=$("$dest/bin/node" --version 2>/dev/null || true)
@@ -64,7 +68,7 @@ fi
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-if ! curl -fsSL "https://nodejs.org/dist/latest-lts/$tarball" | tar -xz -C "$tmp"; then
+if ! curl -fsSL "https://nodejs.org/dist/${latest_ver}/$tarball" | tar -xz -C "$tmp"; then
     sub "tarball download/extract failed; keeping existing install"
     exit 1
 fi
