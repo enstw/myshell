@@ -60,15 +60,25 @@ sublog()  { printf '    %s\n' "$*"; }
 die()     { printf 'error: %s\n' "$*" >&2; exit 1; }
 trap 'rc=$?; printf "error: failed at line %s: %s (exit %s)\n" "$LINENO" "$BASH_COMMAND" "$rc" >&2; exit "$rc"' ERR
 
-# sudo shim: no-op when already root (minimal containers often ship without
-# sudo installed). Non-root still requires sudo on PATH.
+# sudo shim:
+#   - root            -> no prefix needed.
+#   - non-root+sudo   -> prefix system commands with sudo.
+#   - non-root+nosudo -> NO_SUDO=1; system-level steps (apt installs,
+#     locale-gen, timezone, /etc/shells) are skipped and the bootstrap is
+#     reduced to user-level config. The operator is expected to have
+#     pre-installed required system packages via the root account.
+# NO_SUDO is inherited from stage 1 when invoked via bootstrap; re-detected
+# here so stage 2 can also be run standalone.
 if [[ $EUID -eq 0 ]]; then
     SUDO=""
+    NO_SUDO=0
 elif command -v sudo >/dev/null 2>&1; then
     SUDO=sudo
+    NO_SUDO=0
 else
-    echo "error: must run as root, or install sudo first" >&2
-    exit 1
+    printf '==> No sudo and not root — running no-sudo bootstrap (skipping system-level steps).\n'
+    SUDO=""
+    NO_SUDO=1
 fi
 
 # ask PROMPT [DEFAULT] — read a line from tty, echo answer (or default if empty).
@@ -101,24 +111,28 @@ install_apps() {
 
 install_apps_macos() {
     local formulae=(
-        git zsh jq tmux fzf ripgrep sevenzip imagemagick ffmpeg uv
-        ca-certificates node
+        git zsh jq tmux fzf ripgrep sevenzip uv
+        ca-certificates
         bat eza fd zoxide starship tealdeer glow qrencode
         watch
     )
     sublog "brew install ${formulae[*]}"
     brew install "${formulae[@]}"
-    # On a fresh Mac this script may install Homebrew and Node in the same
-    # session. Make the CA bundle setup explicit before npm talks TLS.
+    # Make CA bundle explicit in case later steps (or a user-installed node)
+    # talk TLS in this same shell session.
     brew postinstall ca-certificates >/dev/null 2>&1 || true
 }
 
 install_apps_ubuntu() {
-    sublog "apt base packages..."
-    $SUDO apt-get install -y \
-        git zsh jq tmux fzf ripgrep 7zip imagemagick ffmpeg curl ca-certificates \
-        bat fd-find zoxide tealdeer qrencode build-essential wget gpg \
-        nodejs npm locales tzdata
+    if [[ "$NO_SUDO" == "1" ]]; then
+        sublog "no sudo — skipping apt installs; system packages assumed pre-installed via root"
+    else
+        sublog "apt base packages..."
+        $SUDO apt-get install -y \
+            git zsh jq tmux fzf ripgrep 7zip curl ca-certificates \
+            bat fd-find zoxide tealdeer qrencode build-essential wget gpg \
+            npm locales tzdata
+    fi
 
     # Ubuntu names bat/fd differently; symlink into ~/.local/bin so aliases find them.
     mkdir -p "$HOME/.local/bin"
@@ -127,8 +141,12 @@ install_apps_ubuntu() {
 
     install_uv_ubuntu
     install_starship_ubuntu
-    install_eza_ubuntu
-    install_glow_ubuntu
+    if [[ "$NO_SUDO" == "1" ]]; then
+        sublog "no sudo — skipping eza/glow (require apt-repo setup under /etc)"
+    else
+        install_eza_ubuntu
+        install_glow_ubuntu
+    fi
 }
 
 install_uv_ubuntu() {
@@ -375,6 +393,11 @@ configure_locale() {
         sublog "macOS: system locales are available per-user, skipping locale-gen"
         return 0
     fi
+    if [[ "$NO_SUDO" == "1" ]]; then
+        log "Locale generation..."
+        sublog "no sudo — skipping locale-gen; ensure root has run: locale-gen en_US.UTF-8 en_GB.UTF-8 zh_TW.UTF-8"
+        return 0
+    fi
     log "Generating locales (en_US, en_GB, zh_TW — .UTF-8)..."
     if ! command -v locale-gen >/dev/null; then
         sublog "locale-gen missing; installing 'locales'..."
@@ -386,6 +409,11 @@ configure_locale() {
 }
 
 configure_timezone() {
+    if [[ "$NO_SUDO" == "1" ]]; then
+        log "Timezone..."
+        sublog "no sudo — skipping; ensure root has set timezone to Asia/Taipei"
+        return 0
+    fi
     log "Setting timezone to Asia/Taipei..."
     local target=Asia/Taipei current
     if [[ "$OS" == macos ]]; then
@@ -612,6 +640,10 @@ set_login_shell() {
         return 0
     fi
     if ! grep -qx "$zsh_path" /etc/shells 2>/dev/null; then
+        if [[ "$NO_SUDO" == "1" ]]; then
+            sublog "no sudo — $zsh_path not in /etc/shells; ask root to add it before chsh."
+            return 0
+        fi
         sublog "Adding $zsh_path to /etc/shells..."
         echo "$zsh_path" | $SUDO tee -a /etc/shells >/dev/null
     fi

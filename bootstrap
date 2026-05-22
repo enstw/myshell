@@ -15,15 +15,25 @@ REPO_TARBALL="https://github.com/enstw/myshell/archive/refs/heads/main.tar.gz"
 log() { printf '==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-# sudo shim: become a no-op when already root (minimal containers often ship
-# without sudo installed). Non-root still requires sudo on PATH.
+# sudo shim:
+#   - root           -> no prefix needed.
+#   - non-root+sudo  -> prefix system commands with sudo.
+#   - non-root+nosudo -> NO_SUDO=1; system-level steps are skipped and the
+#     bootstrap is reduced to user-level config. The operator is expected to
+#     have pre-installed required system packages via the root account.
+# NO_SUDO is exported so stage 2 inherits the decision.
 if [ "$(id -u)" -eq 0 ]; then
     SUDO=""
+    NO_SUDO=0
 elif command -v sudo >/dev/null 2>&1; then
     SUDO="sudo"
+    NO_SUDO=0
 else
-    die "must run as root, or install sudo first"
+    log "No sudo and not root — running no-sudo bootstrap (skipping system-level steps)."
+    SUDO=""
+    NO_SUDO=1
 fi
+export NO_SUDO
 
 detect_os() {
     case "$(uname -s)" in
@@ -83,8 +93,12 @@ install_macos() {
 
 install_ubuntu() {
     log "Ubuntu detected."
-    log "Refreshing apt index${SUDO:+ (may prompt for sudo password)}..."
-    $SUDO apt-get update
+    if [ "$NO_SUDO" = "1" ]; then
+        log "No sudo — skipping apt-get update."
+    else
+        log "Refreshing apt index${SUDO:+ (may prompt for sudo password)}..."
+        $SUDO apt-get update
+    fi
     # Ubuntu 20.04+ ships bash 5 by default.
     BASH5=/bin/bash
 }
