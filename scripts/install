@@ -464,6 +464,18 @@ configure_locale() {
         return 0
     fi
     log "Generating locales (en_US, en_GB, zh_TW — .UTF-8)..."
+    # Idempotency: skip the slow sudo locale-gen/update-locale when the three
+    # locales are already compiled and the system default already targets zh_TW.
+    # `locale -a` normalizes names (e.g. en_US.utf8), so match dash/case-insensitively.
+    local have
+    have=$(locale -a 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -d '-')
+    if grep -qx 'en_us.utf8' <<<"$have" \
+       && grep -qx 'en_gb.utf8' <<<"$have" \
+       && grep -qx 'zh_tw.utf8' <<<"$have" \
+       && grep -q '^LANG=zh_TW.UTF-8' /etc/default/locale 2>/dev/null; then
+        sublog "already generated and default set to zh_TW.UTF-8 — skipping"
+        return 0
+    fi
     if ! command -v locale-gen >/dev/null; then
         sublog "locale-gen missing; installing 'locales'..."
         $SUDO apt-get install -y locales
