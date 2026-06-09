@@ -66,8 +66,9 @@ esac
 export PNPM_HOME="$HOME/.local/share/pnpm"
 mkdir -p "$PNPM_HOME"
 
-# Ensure user-local bins (uv, cargo, ~/.local/bin, pnpm) are reachable in this process.
-export PATH="$PNPM_HOME:$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+# Ensure user-local bins (uv, cargo, ~/.local/bin, pnpm) are reachable in this
+# process. pnpm 11 shims live in $PNPM_HOME/bin; old layout used $PNPM_HOME.
+export PATH="$PNPM_HOME/bin:$PNPM_HOME:$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 log()     { printf '\n==> %s\n' "$*"; }
 sublog()  { printf '    %s\n' "$*"; }
@@ -137,10 +138,12 @@ install_pnpm() {
         brew uninstall pnpm >/dev/null 2>&1 || true
     fi
 
-    # Idempotency keys on the standalone binary at $PNPM_HOME/pnpm, not just any
-    # pnpm on PATH — so a leftover brew pnpm never causes us to skip the install.
-    if [[ -x "$PNPM_HOME/pnpm" ]]; then
-        sublog "pnpm already installed ($PNPM_HOME/pnpm) — skipping"
+    # Idempotency keys on the standalone binary in $PNPM_HOME, not just any pnpm
+    # on PATH — so a leftover brew pnpm never causes us to skip the install. pnpm
+    # 11 installs the shim at $PNPM_HOME/bin/pnpm; older layouts used
+    # $PNPM_HOME/pnpm. Accept either so re-runs don't reinstall on every pass.
+    if [[ -x "$PNPM_HOME/bin/pnpm" || -x "$PNPM_HOME/pnpm" ]]; then
+        sublog "pnpm already installed — skipping"
         return 0
     fi
     sublog "Installing pnpm (get.pnpm.io standalone installer)..."
@@ -151,9 +154,9 @@ install_pnpm() {
         sublog "pnpm install failed; continuing (agents/node steps will skip)"
         return 0
     fi
-    [[ -x "$PNPM_HOME/pnpm" ]] \
-        && sublog "pnpm installed ($PNPM_HOME/pnpm)" \
-        || sublog "pnpm installer finished but $PNPM_HOME/pnpm not found; continuing"
+    [[ -x "$PNPM_HOME/bin/pnpm" || -x "$PNPM_HOME/pnpm" ]] \
+        && sublog "pnpm installed" \
+        || sublog "pnpm installer finished but no pnpm binary found; continuing"
 }
 
 install_apps_macos() {
@@ -279,9 +282,11 @@ elif [[ -x /usr/local/bin/brew ]]; then
     eval "$(/usr/local/bin/brew shellenv)"
 fi
 
-# pnpm: global bins + the node runtime pnpm provisions live here.
+# pnpm: global bins + the node runtime pnpm provisions live here. pnpm 11 puts
+# shims in $PNPM_HOME/bin; older layouts used $PNPM_HOME directly. Add both.
 export PNPM_HOME="$HOME/.local/share/pnpm"
-[[ -d "$PNPM_HOME" ]] && path=("$PNPM_HOME" $path)
+[[ -d "$PNPM_HOME/bin" ]] && path=("$PNPM_HOME/bin" $path)
+[[ -d "$PNPM_HOME" ]]     && path=("$PNPM_HOME" $path)
 
 [[ -d "$HOME/.cargo/bin" ]]    && path=("$HOME/.cargo/bin" $path)
 [[ -d "$HOME/.bun/bin" ]]      && path=("$HOME/.bun/bin" $path)
@@ -502,8 +507,8 @@ setup_pnpm() {
     command -v pnpm >/dev/null || { log "pnpm setup"; sublog "pnpm not found, skipping"; return 0; }
     log "Provisioning Node LTS via pnpm..."
     # pnpm supplies the Node runtime the AI agents need; this also lands
-    # node/npm/npx symlinks in $PNPM_HOME (already on PATH). Idempotent.
-    if pnpm env use --global lts; then
+    # node/npm/npx symlinks in pnpm's global bin dir (already on PATH). Idempotent.
+    if pnpm runtime set node lts -g; then
         sublog "Node LTS active ($(node --version 2>/dev/null || echo 'pending new shell'))"
     else
         sublog "pnpm env use --global lts failed; agents may lack a node runtime"

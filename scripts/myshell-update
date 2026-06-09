@@ -34,8 +34,8 @@ fi
 if command -v pnpm &>/dev/null; then
     echo "==> Updating pnpm..."
     pnpm self-update || true
-    echo "==> Refreshing Node LTS (pnpm env)..."
-    pnpm env use --global lts || true
+    echo "==> Refreshing Node LTS (pnpm runtime)..."
+    pnpm runtime set node lts -g || true
     echo "==> Updating pnpm global packages..."
     pnpm update -g || true
 fi
