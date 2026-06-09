@@ -518,12 +518,19 @@ configure_timezone() {
 setup_pnpm() {
     command -v pnpm >/dev/null || { log "pnpm setup"; sublog "pnpm not found, skipping"; return 0; }
     log "Provisioning Node LTS via pnpm..."
+    # Check-first: if pnpm already provisioned a Node runtime, skip the network
+    # re-resolve. Bootstrap only guarantees a runtime exists; refreshing it to
+    # the newest LTS is `myshell-update`'s job (the `u` alias).
+    if command -v node >/dev/null 2>&1; then
+        sublog "Node already provisioned ($(node --version)) — skipping; 'u' refreshes LTS"
+        return 0
+    fi
     # pnpm supplies the Node runtime the AI agents need; this also lands
-    # node/npm/npx symlinks in pnpm's global bin dir (already on PATH). Idempotent.
+    # node/npm/npx symlinks in pnpm's global bin dir (already on PATH).
     if pnpm runtime set node lts -g; then
         sublog "Node LTS active ($(node --version 2>/dev/null || echo 'pending new shell'))"
     else
-        sublog "pnpm env use --global lts failed; agents may lack a node runtime"
+        sublog "pnpm runtime set node lts failed; agents may lack a node runtime"
     fi
 }
 
@@ -668,13 +675,19 @@ install_fonts() {
     # ENSFont.ttc is published as the single asset on the latest release of
     # github.com/enstw/font. GitHub's /releases/latest/download/<name> URL is
     # a stable redirect to that asset, so no jq/tarball dance is needed.
-    confirm "Install ENS fonts from github.com/enstw/font?" || return 0
     local fonts_dir
     if [[ "$OS" == macos ]]; then
         fonts_dir="$HOME/Library/Fonts"
     else
         fonts_dir="$HOME/.local/share/fonts"
     fi
+    # Check-first: skip (without prompting) when the font is already present, so
+    # re-running bootstrap to sync neither re-downloads nor re-asks.
+    if [[ -f "$fonts_dir/ENSFont.ttc" ]]; then
+        log "ENS fonts already installed ($fonts_dir/ENSFont.ttc) — skipping"
+        return 0
+    fi
+    confirm "Install ENS fonts from github.com/enstw/font?" || return 0
     mkdir -p "$fonts_dir"
     sublog "Downloading ENSFont.ttc (latest release)..."
     if ! curl -fsSL -o "$fonts_dir/ENSFont.ttc" \
