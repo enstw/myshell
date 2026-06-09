@@ -24,17 +24,25 @@ set -Eeuo pipefail
 #
 # - Timezone: Asia/Taipei.
 #
-# - AI agents: optional, user picks from Claude Code, Gemini CLI, Codex.
-#   All three install globally via npm into ~/.npm-global. Gemini's built-in
-#   self-update only works on a global install (it tries to npm-update its own
-#   package), so the previous "install locally to dodge deprecated
-#   prebuild-install" workaround is gone.
+# - AI agents: optional. Claude Code and Codex install globally via `pnpm add -g`
+#   into $PNPM_HOME (the numbered menu). OpenCode and Antigravity CLI (`agy`, the
+#   replacement for the retired Gemini CLI) are standalone self-updating binaries
+#   — separate opt-in prompts, NOT pnpm-managed (see the bun note) — because
+#   their own updaters would fight a package manager. agy lands in ~/.local/bin
+#   (already on PATH); opencode in ~/.opencode/bin.
 #
 # - tealdeer: the Rust `tealdeer`, not the Python `tldr`. Page language comes
 #   from $LANGUAGE (tealdeer has no language option of its own).
 #
-# - npm: global prefix is ~/.npm-global so globals don't need sudo. PATH
-#   pickup is handled in ~/.zshenv.
+# - Node/pnpm: this machine is pnpm-only. pnpm is installed standalone (the
+#   self-contained @pnpm/exe build via get.pnpm.io) on both macOS and Ubuntu,
+#   and pnpm itself provisions the Node runtime (`pnpm env use --global lts`).
+#   There is no separate `node`/`npm` install: npm/npx ship inside pnpm's Node
+#   but are not used. Global bins live in $PNPM_HOME; PATH pickup is in ~/.zshenv.
+#
+# - bun: installed via its own bun.sh installer into ~/.bun — a peer runtime
+#   required by the gstack skill, NOT part of the pnpm-only policy. It doesn't
+#   go through npm, so leave it alone; it isn't a stray npm-ish tool to purge.
 #
 # - zsh layout: ~/.zshenv is sourced by every zsh invocation — PATH, locale,
 #   umask, anything non-interactive scripts or cron need. ~/.zsh/*.zsh is
@@ -52,8 +60,14 @@ case "$(uname -s)" in
     *) echo "unsupported OS: $(uname -s)" >&2; exit 1 ;;
 esac
 
-# Ensure user-local bins (uv, cargo, ~/.local/bin) are reachable in this process.
-export PATH="$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+# pnpm home: unified across macOS and Ubuntu so install-time `pnpm add -g` and
+# `pnpm env` target a known dir, and global bins are reachable for the rest of
+# this run. The generated ~/.zshenv exports the same value for login shells.
+export PNPM_HOME="$HOME/.local/share/pnpm"
+mkdir -p "$PNPM_HOME"
+
+# Ensure user-local bins (uv, cargo, ~/.local/bin, pnpm) are reachable in this process.
+export PATH="$PNPM_HOME:$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 log()     { printf '\n==> %s\n' "$*"; }
 sublog()  { printf '    %s\n' "$*"; }
@@ -105,21 +119,54 @@ install_apps() {
         macos)  install_apps_macos ;;
         ubuntu) install_apps_ubuntu ;;
     esac
+    install_pnpm
     install_bun
     install_zinit
+}
+
+install_pnpm() {
+    # Standalone pnpm (the self-contained @pnpm/exe build) on both OSes — same
+    # curl|sh pattern as bun/uv/starship/Homebrew. This build bundles its own
+    # Node and later provisions a runtime via `pnpm env`.
+    #
+    # NOT the Homebrew formula: brew's `pnpm` is the plain JS build that needs a
+    # separate `node` to run ("pnpm requires a Node installation to function").
+    # With no node, it's broken. Remove it so it can't shadow the standalone one.
+    if [[ "$OS" == macos ]] && brew list --formula pnpm >/dev/null 2>&1; then
+        sublog "Removing Homebrew pnpm (needs external node) in favor of the standalone build..."
+        brew uninstall pnpm >/dev/null 2>&1 || true
+    fi
+
+    # Idempotency keys on the standalone binary at $PNPM_HOME/pnpm, not just any
+    # pnpm on PATH — so a leftover brew pnpm never causes us to skip the install.
+    if [[ -x "$PNPM_HOME/pnpm" ]]; then
+        sublog "pnpm already installed ($PNPM_HOME/pnpm) — skipping"
+        return 0
+    fi
+    sublog "Installing pnpm (get.pnpm.io standalone installer)..."
+    # PNPM_HOME is already exported (see top of script); the installer honors it
+    # so the home is identical on macOS and Ubuntu. It also appends a PNPM_HOME
+    # block to ~/.zshrc/~/.bashrc — harmless; our generated ~/.zshenv owns PATH.
+    if ! curl -fsSL https://get.pnpm.io/install.sh | sh -; then
+        sublog "pnpm install failed; continuing (agents/node steps will skip)"
+        return 0
+    fi
+    [[ -x "$PNPM_HOME/pnpm" ]] \
+        && sublog "pnpm installed ($PNPM_HOME/pnpm)" \
+        || sublog "pnpm installer finished but $PNPM_HOME/pnpm not found; continuing"
 }
 
 install_apps_macos() {
     local formulae=(
         git zsh jq tmux fzf ripgrep sevenzip uv
-        ca-certificates node
+        ca-certificates
         bat eza fd zoxide starship tealdeer glow qrencode
         watch
     )
     sublog "brew install ${formulae[*]}"
     brew install "${formulae[@]}"
-    # On a fresh Mac this script may install Homebrew and Node in the same
-    # session. Make the CA bundle setup explicit before npm talks TLS.
+    # Refresh the CA bundle on a fresh Mac so later curl|sh installers (pnpm,
+    # bun) and pnpm's registry TLS have a trusted root store.
     brew postinstall ca-certificates >/dev/null 2>&1 || true
 }
 
@@ -141,19 +188,12 @@ install_apps_ubuntu() {
 
     install_uv_ubuntu
     install_starship_ubuntu
-    install_node_ubuntu
     if [[ "$NO_SUDO" == "1" ]]; then
         sublog "no sudo — skipping eza/glow (require apt-repo setup under /etc)"
     else
         install_eza_ubuntu
         install_glow_ubuntu
     fi
-}
-
-install_node_ubuntu() {
-    # Node.js LTS via the official tarball (no apt deps, works under NO_SUDO).
-    # The helper itself decides install-vs-upgrade-vs-skip; we just invoke it.
-    bash "$REPO_ROOT/scripts/install-node-lts"
 }
 
 install_uv_ubuntu() {
@@ -239,14 +279,13 @@ elif [[ -x /usr/local/bin/brew ]]; then
     eval "$(/usr/local/bin/brew shellenv)"
 fi
 
-if (( ${+commands[npm]} )); then
-    npm_prefix=$(npm config get prefix 2>/dev/null)
-    [[ -n "$npm_prefix" && -d "$npm_prefix/bin" ]] && path=("$npm_prefix/bin" $path)
-    unset npm_prefix
-fi
+# pnpm: global bins + the node runtime pnpm provisions live here.
+export PNPM_HOME="$HOME/.local/share/pnpm"
+[[ -d "$PNPM_HOME" ]] && path=("$PNPM_HOME" $path)
 
-[[ -d "$HOME/.cargo/bin" ]] && path=("$HOME/.cargo/bin" $path)
-[[ -d "$HOME/.bun/bin" ]]   && path=("$HOME/.bun/bin" $path)
+[[ -d "$HOME/.cargo/bin" ]]    && path=("$HOME/.cargo/bin" $path)
+[[ -d "$HOME/.bun/bin" ]]      && path=("$HOME/.bun/bin" $path)
+[[ -d "$HOME/.opencode/bin" ]] && path=("$HOME/.opencode/bin" $path)
 
 unset LC_ALL
 export LANG=zh_TW.UTF-8
@@ -272,6 +311,16 @@ command -v bat      >/dev/null && alias cat='bat --paging=never'
 command -v qrencode >/dev/null && alias qrencode='qrencode -t ansiutf8 -r'
 command -v uv       >/dev/null && alias uvu='uv tool upgrade --all'
 [[ -x "$HOME/bin/myshell-update" ]] && alias u="$HOME/bin/myshell-update"
+
+# This machine is pnpm-only. `npx` maps to `pnpm dlx`; `npm` is guarded with a
+# function (not a flat alias — subcommands differ, e.g. `npm i -g X` is
+# `pnpm add -g X`) so a stray `npm` nudges to pnpm instead of running wrong.
+command -v pnpm >/dev/null && alias npx='pnpm dlx'
+command -v pnpm >/dev/null && npm() {
+    print -u2 "npm is disabled on this machine — use pnpm (npx -> 'pnpm dlx', npm i -g X -> 'pnpm add -g X')."
+    print -u2 "Ran: npm $*"
+    return 127
+}
 
 EOF
 
@@ -359,11 +408,9 @@ deploy_scripts() {
     cp "$REPO_ROOT/scripts/myshell-update" "$HOME/bin/myshell-update"
     chmod +x "$HOME/bin/myshell-update"
 
-    sublog "~/bin/myshell-install-node-lts"
-    # Deployed so myshell-update can refresh the tarball without needing the
-    # repo checked out.
-    cp "$REPO_ROOT/scripts/install-node-lts" "$HOME/bin/myshell-install-node-lts"
-    chmod +x "$HOME/bin/myshell-install-node-lts"
+    # Drop the old node-tarball helper from pre-pnpm installs — pnpm now owns
+    # the Node runtime, so this deployed copy is obsolete.
+    rm -f "$HOME/bin/myshell-install-node-lts"
     # Clean up the old unnamespaced deploy from pre-rename installs —
     # but only if it's ours (the old file carried this exact comment, so
     # the match won't touch a user's personal ~/bin/update).
@@ -451,41 +498,35 @@ configure_timezone() {
     sublog "set to $target"
 }
 
-configure_npm() {
-    command -v npm >/dev/null || { log "npm config"; sublog "npm not found, skipping"; return 0; }
-    log "Configuring npm global prefix (no-sudo installs)..."
-    local prefix_dir="$HOME/.npm-global" current
-    mkdir -p "$prefix_dir"
-    current=$(npm config get prefix 2>/dev/null || true)
-    if [[ "$current" == "$prefix_dir" ]]; then
-        sublog "prefix already set to $prefix_dir"
-        return 0
+setup_pnpm() {
+    command -v pnpm >/dev/null || { log "pnpm setup"; sublog "pnpm not found, skipping"; return 0; }
+    log "Provisioning Node LTS via pnpm..."
+    # pnpm supplies the Node runtime the AI agents need; this also lands
+    # node/npm/npx symlinks in $PNPM_HOME (already on PATH). Idempotent.
+    if pnpm env use --global lts; then
+        sublog "Node LTS active ($(node --version 2>/dev/null || echo 'pending new shell'))"
+    else
+        sublog "pnpm env use --global lts failed; agents may lack a node runtime"
     fi
-    npm config set prefix "$prefix_dir"
-    sublog "prefix set to $prefix_dir (PATH pickup is handled in ~/.zshenv)"
 }
 
 install_agents() {
-    command -v npm >/dev/null || { log "AI agents"; sublog "npm not found, skipping"; return 0; }
+    command -v pnpm >/dev/null || { log "AI agents"; sublog "pnpm not found, skipping"; return 0; }
     if ! npm_registry_ok; then
-        log "AI agents — Claude Code, Gemini CLI, Codex"
-        sublog "npm cannot verify the registry TLS certificate; skipping optional agent installs."
-        sublog "Retry later with: npm install -g @anthropic-ai/claude-code @google/gemini-cli @openai/codex"
-        if [[ "$OS" == macos ]]; then
-            sublog "If it still fails: brew reinstall ca-certificates node && brew postinstall ca-certificates"
-        fi
+        log "AI agents — Claude Code, Codex"
+        sublog "cannot reach the npm registry; skipping optional agent installs."
+        sublog "Retry later with: pnpm add -g @anthropic-ai/claude-code @openai/codex"
         return 0
     fi
-    log "AI agents — Claude Code, Gemini CLI, Codex"
-    sublog "Pick a number: 0 none, 1 Claude, 2 Codex, 3 Claude+Codex, 4 Gemini, 5 Gemini+Claude, 6 Gemini+Codex, 7 all."
-    sublog "Names still work too: all, none, or comma-separated claude,gemini,codex."
+    log "AI agents — Claude Code, Codex"
+    sublog "Pick a number: 0 none, 1 Claude, 2 Codex, 3 Claude+Codex."
+    sublog "Names still work too: all, none, or comma-separated claude,codex."
     local choice
-    choice=$(ask "Install which agents?" "7")
+    choice=$(ask "Install which agents?" "3")
     case "$choice" in
         0|none|"") sublog "skipping all agents"; return 0 ;;
-        7|all)
+        3|all)
             install_agent "Claude Code" install_claude_code
-            install_agent "Gemini CLI" install_gemini_cli
             install_agent "OpenAI Codex CLI" install_codex
             ;;
         1|claude|claude-code)
@@ -494,27 +535,11 @@ install_agents() {
         2|codex)
             install_agent "OpenAI Codex CLI" install_codex
             ;;
-        3)
-            install_agent "Claude Code" install_claude_code
-            install_agent "OpenAI Codex CLI" install_codex
-            ;;
-        4|gemini|gemini-cli)
-            install_agent "Gemini CLI" install_gemini_cli
-            ;;
-        5)
-            install_agent "Gemini CLI" install_gemini_cli
-            install_agent "Claude Code" install_claude_code
-            ;;
-        6)
-            install_agent "Gemini CLI" install_gemini_cli
-            install_agent "OpenAI Codex CLI" install_codex
-            ;;
         *)
             local agent
             for agent in $(printf '%s\n' "$choice" | tr ',' ' '); do
                 case "$agent" in
                     claude|claude-code) install_agent "Claude Code" install_claude_code ;;
-                    gemini|gemini-cli)  install_agent "Gemini CLI" install_gemini_cli ;;
                     codex)              install_agent "OpenAI Codex CLI" install_codex ;;
                     "") ;;
                     *) sublog "unknown agent '$agent' (skipping)" ;;
@@ -524,12 +549,46 @@ install_agents() {
     esac
 }
 
+install_opencode() {
+    # OpenCode — standalone AI agent, installed like bun: its own prebuilt
+    # binary (no npm/node) into ~/.opencode/bin. Deliberately NOT a pnpm-managed
+    # agent — it self-updates via `opencode upgrade`, so keeping it out of the
+    # pnpm global set avoids the package-manager-vs-self-updater conflict that
+    # retired Gemini. No sudo; works under NO_SUDO.
+    log "OpenCode — standalone AI agent"
+    if [[ -x "$HOME/.opencode/bin/opencode" ]]; then
+        sublog "already installed (~/.opencode/bin) — skipping"
+        return 0
+    fi
+    confirm "Install OpenCode?" || { sublog "skipping"; return 0; }
+    sublog "opencode.ai installer (--no-modify-path; ~/.zshenv owns PATH)"
+    # --no-modify-path: the installer would otherwise append PATH lines to
+    # ~/.zshrc/~/.zshenv; our generated ~/.zshenv owns PATH (same as bun).
+    curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path \
+        || sublog "OpenCode install failed; continuing with the rest of bootstrap"
+}
+
+install_agy() {
+    # Antigravity CLI (agy) — Google's standalone Go binary, the replacement for
+    # the retired Gemini CLI. Self-updating (`agy update`), node-free, no sudo.
+    # Installs to ~/.local/bin/agy, which is already on PATH via ~/.zshenv — a
+    # peer like opencode/bun, deliberately not a pnpm agent.
+    log "Antigravity CLI (agy) — standalone AI agent"
+    if command -v agy >/dev/null || [[ -x "$HOME/.local/bin/agy" ]]; then
+        sublog "already installed ($(command -v agy 2>/dev/null || echo "$HOME/.local/bin/agy")) — skipping"
+        return 0
+    fi
+    confirm "Install Antigravity CLI (agy)?" || { sublog "skipping"; return 0; }
+    sublog "antigravity.google installer (binary -> ~/.local/bin/agy)"
+    # The installer finishes by running `agy install` to configure PATH/aliases;
+    # ~/.local/bin is already on our PATH, so that step is redundant but harmless.
+    curl -fsSL https://antigravity.google/cli/install.sh | bash \
+        || sublog "agy install failed; continuing with the rest of bootstrap"
+}
+
 npm_registry_ok() {
-    local registry
-    registry=$(npm config get registry 2>/dev/null || true)
-    [[ -n "$registry" && "$registry" != undefined ]] || registry="https://registry.npmjs.org/"
-    sublog "checking npm registry TLS ($registry)"
-    npm ping --registry="$registry" >/dev/null 2>&1
+    sublog "checking npm registry reachability (registry.npmjs.org)"
+    curl -fsSI https://registry.npmjs.org/ >/dev/null 2>&1
 }
 
 install_agent() {
@@ -544,34 +603,22 @@ install_agent() {
 
 install_claude_code() {
     log "Installing Claude Code..."
-    if npm list -g --depth=0 2>/dev/null | grep -q '@anthropic-ai/claude-code'; then
-        sublog "already installed (npm global) — skipping"
+    if pnpm ls -g --depth=0 2>/dev/null | grep -q '@anthropic-ai/claude-code'; then
+        sublog "already installed (pnpm global) — skipping"
         return 0
     fi
-    sublog "npm install -g @anthropic-ai/claude-code"
-    npm install -g @anthropic-ai/claude-code
+    sublog "pnpm add -g @anthropic-ai/claude-code"
+    pnpm add -g @anthropic-ai/claude-code
 }
 
 install_codex() {
     log "Installing OpenAI Codex CLI..."
-    if npm list -g --depth=0 2>/dev/null | grep -q '@openai/codex'; then
-        sublog "already installed (npm global) — skipping"
+    if pnpm ls -g --depth=0 2>/dev/null | grep -q '@openai/codex'; then
+        sublog "already installed (pnpm global) — skipping"
         return 0
     fi
-    sublog "npm install -g @openai/codex"
-    npm install -g @openai/codex
-}
-
-install_gemini_cli() {
-    log "Installing Gemini CLI..."
-    # Global install — gemini's self-update path requires it. Local installs
-    # under npx --prefix can't update themselves.
-    if npm list -g --depth=0 2>/dev/null | grep -q '@google/gemini-cli'; then
-        sublog "already installed (npm global) — skipping"
-        return 0
-    fi
-    sublog "npm install -g @google/gemini-cli"
-    npm install -g @google/gemini-cli
+    sublog "pnpm add -g @openai/codex"
+    pnpm add -g @openai/codex
 }
 
 configure_tealdeer() {
@@ -678,8 +725,10 @@ main() {
     deploy_scripts
     configure_git
     configure_timezone
-    configure_npm
+    setup_pnpm
     install_agents
+    install_opencode
+    install_agy
     configure_tealdeer
     install_fonts
     configure_terminal_profile
