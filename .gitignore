@@ -3,3 +3,6 @@
 *.swo
 *~
 .install.log
+
+# Antigravity CLI (agy) per-project state — symlinks into ~/.gemini config.
+.antigravitycli/

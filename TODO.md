@@ -12,7 +12,7 @@ Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
 ## Done in stage 2
 
 1. Core apps via brew (mac) or apt + upstream installers for uv/starship/eza/glow (Ubuntu).
-1. node+npm installed (brew `ca-certificates node` on mac, apt `nodejs npm` on Ubuntu).
+1. pnpm installed standalone (`get.pnpm.io` curl|sh, both OSes); pnpm provisions the Node LTS runtime via `pnpm env use --global lts`. No separate node/npm install — this machine is pnpm-only.
 1. `batcat`/`fdfind` → `bat`/`fd` symlinks on Ubuntu.
 1. zinit cloned to `~/.local/share/zinit/zinit.git`.
 1. Writes `~/.zshenv`, `~/.zsh/{aliases,history,zoxide}.zsh`, `~/.zsh/motd.zsh` (Ubuntu), `~/.zshrc`.
@@ -21,8 +21,10 @@ Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
 1. Prompts for `git user.name` / `user.email`.
 1. Locale generation on Ubuntu: `en_US.UTF-8`, `en_GB.UTF-8`, `zh_TW.UTF-8`; default `LANG=zh_TW.UTF-8`, `LANGUAGE=zh_TW:en`.
 1. Timezone set to `Asia/Taipei` (systemsetup on mac; timedatectl or `/etc/timezone` fallback on Ubuntu).
-1. npm global prefix set to `~/.npm-global` (no-sudo installs); PATH pickup already handled in `~/.zshenv`.
-1. AI agents prompt — pick numeric combinations (`0` none, `1` Claude, `2` Codex, `3` Claude+Codex, `4` Gemini, `5` Gemini+Claude, `6` Gemini+Codex, `7` all) or use `all`, `none`, or comma-separated `claude,gemini,codex`. All install globally via npm into `~/.npm-global` (gemini's self-update only works on global installs). npm registry TLS is preflighted and optional agent installs fail soft.
+1. pnpm global home is `$PNPM_HOME` (`~/.local/share/pnpm`, no-sudo installs); PATH pickup handled in `~/.zshenv`. `npx` is aliased to `pnpm dlx` and a guard function blocks stray `npm`.
+1. AI agents prompt — pick numeric combinations (`0` none, `1` Claude, `2` Codex, `3` Claude+Codex) or use `all`, `none`, or comma-separated `claude,codex`. Both install globally via `pnpm add -g` into `$PNPM_HOME`. npm registry reachability is preflighted and optional agent installs fail soft. (Gemini CLI dropped — replaced by the non-node-managed `agy`.)
+1. OpenCode — separate opt-in `confirm` after the pnpm agents. Installs the standalone binary via `curl opencode.ai/install | bash -s -- --no-modify-path` into `~/.opencode/bin` (no npm/node, no sudo); PATH pickup in `~/.zshenv`; self-updates via `opencode upgrade` in `myshell-update`. Kept off pnpm to avoid the self-updater-vs-package-manager conflict.
+1. Antigravity CLI (`agy`) — the replacement for the retired Gemini CLI, also a separate opt-in `confirm`. Google's standalone Go binary via `curl antigravity.google/cli/install.sh | bash` into `~/.local/bin/agy` (no npm/node, no sudo; `~/.local/bin` already on PATH); self-updates via `agy update` in `myshell-update`. Standalone like OpenCode, not a pnpm agent.
 1. tealdeer config written (`auto_update = true`) and page cache fetched with `LANGUAGE=zh_TW:en`.
 1. Opt-in ENS font install from `ent.tw/font` (assumes redirect to GitHub releases JSON).
 1. Adds zsh to `/etc/shells`, offers `chsh`.
@@ -40,7 +42,7 @@ Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
 1. `ent.tw/font` is assumed to redirect to the GitHub releases JSON — untested from the script.
 1. `chsh` on macOS prompts for the user's login password; acceptable but unavoidable.
 1. Stage 1 still needs `apt-get update` to succeed; if a minimal image has no sources configured at all, it'll fail — haven't handled that case. (Missing-sudo on root is now handled via the `$SUDO` shim.)
-1. 2026-05-10 fresh Mac bootstrap hit `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` during npm agent installs, and another run appeared to stop around the Bun installer without the final `Done` line. Stage 2 now forces Homebrew CA postinstall, makes Bun and npm agents fail soft, and prints an `ERR` trap diagnostic for unexpected exits.
+1. 2026-05-10 fresh Mac bootstrap hit `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` during agent installs, and another run appeared to stop around the Bun installer without the final `Done` line. Stage 2 now forces Homebrew CA postinstall, makes Bun and the pnpm agent installs fail soft, and prints an `ERR` trap diagnostic for unexpected exits.
 
 ## How to resume / test
 
