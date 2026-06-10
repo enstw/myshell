@@ -61,6 +61,9 @@ brew_prefix() {
 
 install_macos() {
     log "macOS detected."
+    # Homebrew refuses to run as root ("Don't run this as root!") — fail
+    # fast with our own message instead of dying inside its installer.
+    [ "$(id -u)" -ne 0 ] || die "do not run as root on macOS — Homebrew refuses root installs"
     # `command -v brew` only finds it once PATH is set up. On a fresh shell
     # immediately after the Homebrew installer runs, brew is on disk but not
     # yet in PATH — fall back to the known prefix paths so we don't reinstall.
@@ -75,6 +78,12 @@ install_macos() {
 
     if [ -z "$brew_bin" ]; then
         log "Installing Homebrew — may prompt for password and open a Command Line Tools dialog."
+        # NONINTERACTIVE=1 skips the installer's "Press RETURN" read (which
+        # would eat the script stream in curl|sh mode), but it also makes the
+        # installer use `sudo -n`, which aborts instead of prompting. Pre-warm
+        # the sudo timestamp here — sudo prompts on /dev/tty, so this works
+        # even when piped.
+        [ -z "$SUDO" ] || $SUDO -v
         NONINTERACTIVE=1 /bin/bash -c \
             "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
         brew_bin="$(brew_prefix)/bin/brew"
@@ -111,10 +120,16 @@ main() {
     esac
 
     # Prefer a sibling scripts/install (local checkout) so dev iteration
-    # works. Fall back to downloading the latest tarball into a tmp dir —
-    # this is the curl|sh path and also the "tarball without exec bit" path.
+    # works — but only when $0 really is the bootstrap file. In curl|sh mode
+    # $0 is the shell name and dirname is ".", so a scripts/install in the
+    # caller's cwd would be unrelated or stale; fetch the tarball instead.
+    # Fallback: download the latest tarball into a tmp dir — the curl|sh
+    # path and also the "tarball without exec bit" path.
     # -f not -x: stage 2 is invoked via $BASH5, so the exec bit is optional.
-    stage2="$(dirname "$0")/scripts/install"
+    stage2=""
+    case "$(basename "$0")" in
+        bootstrap) stage2="$(dirname "$0")/scripts/install" ;;
+    esac
     if [ ! -f "$stage2" ]; then
         log "No local scripts/install — fetching latest tarball..."
         tmp=$(mktemp -d)

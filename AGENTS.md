@@ -15,7 +15,7 @@ Context for AI agents working in this repository.
 
 Two stages:
 
-1. `bootstrap` — POSIX-sh. Installs Homebrew + bash 5 on macOS, or refreshes apt on Ubuntu, then `exec`s stage 2.
+1. `bootstrap` — POSIX-sh. Installs Homebrew + bash 5 on macOS, or refreshes apt on Ubuntu, then runs stage 2 (no `exec` — bootstrap's cleanup trap must outlive it).
 2. `scripts/install` — bash 5. The source of truth. Installs apps, writes `~/.zshenv` + `~/.zsh/*.zsh` + `~/.zshrc`, deploys `scripts/myshell-update`, configures locale/timezone/npm, prompts for AI agents and fonts. Read its header banner for the design rules (Python-via-uv-only, locale, timezone, AI agent install pattern, zsh file layout).
 
 ## Conventions
