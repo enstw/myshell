@@ -166,8 +166,20 @@ install_apps_macos() {
         bat eza fd zoxide starship tealdeer glow qrencode
         watch
     )
-    sublog "brew install ${formulae[*]}"
-    brew install "${formulae[@]}"
+    # Check-first: brew install skips installed formulae anyway, but invoking it
+    # at all pays tap/update overhead on every re-run — only call it for what's
+    # actually missing.
+    local installed missing=() f
+    installed=$(brew list --formula)
+    for f in "${formulae[@]}"; do
+        grep -qx "$f" <<<"$installed" || missing+=("$f")
+    done
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        sublog "all brew formulae already installed — skipping"
+    else
+        sublog "brew install ${missing[*]}"
+        brew install "${missing[@]}"
+    fi
     # Refresh the CA bundle on a fresh Mac so later curl|sh installers (pnpm,
     # bun) and pnpm's registry TLS have a trusted root store.
     brew postinstall ca-certificates >/dev/null 2>&1 || true
@@ -177,11 +189,23 @@ install_apps_ubuntu() {
     if [[ "$NO_SUDO" == "1" ]]; then
         sublog "no sudo — skipping apt installs; system packages assumed pre-installed via root"
     else
-        sublog "apt base packages..."
-        $SUDO apt-get install -y \
-            git zsh jq tmux fzf ripgrep 7zip curl ca-certificates \
-            bat fd-find zoxide tealdeer qrencode build-essential wget gpg \
+        # Check-first: apt-get install -y is idempotent but slow when invoked
+        # for already-present packages — only ask it for what dpkg lacks.
+        local pkgs=(
+            git zsh jq tmux fzf ripgrep 7zip curl ca-certificates
+            bat fd-find zoxide tealdeer qrencode build-essential wget gpg
             locales tzdata
+        )
+        local missing=() p
+        for p in "${pkgs[@]}"; do
+            dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p")
+        done
+        if [[ ${#missing[@]} -eq 0 ]]; then
+            sublog "apt base packages already installed — skipping"
+        else
+            sublog "apt install ${missing[*]}"
+            $SUDO apt-get install -y "${missing[@]}"
+        fi
     fi
 
     # Ubuntu names bat/fd differently; symlink into ~/.local/bin so aliases find them.
@@ -402,6 +426,25 @@ for f in ~/.zsh/*.zsh(N); do source "$f"; done
 command -v starship >/dev/null && eval "$(starship init zsh)"
 EOF
 }
+# fetch_config URL DEST — refresh DEST from URL on every run (sync semantics),
+# but never let a network failure abort the bootstrap: under set -e + the ERR
+# trap, a bare `curl -o` here would kill an offline re-run halfway through.
+# Downloads to a temp file so a failed transfer can't truncate an existing copy.
+fetch_config() {
+    local url="$1" dest="$2" tmp
+    tmp=$(mktemp)
+    if curl -fsSL -o "$tmp" "$url"; then
+        mv "$tmp" "$dest"
+    else
+        rm -f "$tmp"
+        if [[ -f "$dest" ]]; then
+            sublog "download failed; keeping existing $dest"
+        else
+            sublog "download failed; $dest not installed (re-run to retry)"
+        fi
+    fi
+}
+
 deploy_scripts() {
     log "Deploying helper scripts and configs..."
 
@@ -426,8 +469,8 @@ deploy_scripts() {
 
     sublog "~/.config/starship.toml"
     mkdir -p "$HOME/.config"
-    curl -fsSL https://github.com/enstw/myshell-starship/raw/refs/heads/master/starship.toml \
-         -o "$HOME/.config/starship.toml"
+    fetch_config https://github.com/enstw/myshell-starship/raw/refs/heads/master/starship.toml \
+                 "$HOME/.config/starship.toml"
 
     sublog "eza tokyonight theme"
     local eza_dir
@@ -437,14 +480,20 @@ deploy_scripts() {
         eza_dir="$HOME/.config/eza"
     fi
     mkdir -p "$eza_dir"
-    curl -fsSL https://raw.githubusercontent.com/eza-community/eza-themes/main/themes/tokyonight.yml \
-         -o "$eza_dir/theme.yml"
+    fetch_config https://raw.githubusercontent.com/eza-community/eza-themes/main/themes/tokyonight.yml \
+                 "$eza_dir/theme.yml"
 }
 configure_git() {
     log "Configuring git identity..."
     local current_name current_email new_name new_email
     current_name=$(git config --global user.name  2>/dev/null || true)
     current_email=$(git config --global user.email 2>/dev/null || true)
+    # Check-first: only prompt when the identity is incomplete, so re-runs
+    # stay non-interactive. `git config --global` is the tool for changing it.
+    if [[ -n "$current_name" && -n "$current_email" ]]; then
+        sublog "already configured: $current_name <$current_email> — skipping"
+        return 0
+    fi
     new_name=$(ask "git user.name?"  "$current_name")
     new_email=$(ask "git user.email?" "$current_email")
     git config --global user.name  "$new_name"
@@ -509,6 +558,11 @@ configure_timezone() {
         $SUDO timedatectl set-timezone "$target"
     else
         # Container / no systemd: write /etc/timezone + relink /etc/localtime.
+        current=$(cat /etc/timezone 2>/dev/null || true)
+        if [[ "$current" == "$target" ]]; then
+            sublog "already $target"
+            return 0
+        fi
         echo "$target" | $SUDO tee /etc/timezone >/dev/null
         $SUDO ln -sf "/usr/share/zoneinfo/$target" /etc/localtime
     fi
@@ -536,6 +590,17 @@ setup_pnpm() {
 
 install_agents() {
     command -v pnpm >/dev/null || { log "AI agents"; sublog "pnpm not found, skipping"; return 0; }
+    # Check-first: when both agents are already in the pnpm global set, skip
+    # the registry probe and the menu so re-runs are quiet (same pattern as
+    # install_fonts). A partial install (one of two) still prompts.
+    local installed
+    installed=$(pnpm ls -g --depth=0 2>/dev/null || true)
+    if grep -q '@anthropic-ai/claude-code' <<<"$installed" \
+       && grep -q '@openai/codex' <<<"$installed"; then
+        log "AI agents — Claude Code, Codex"
+        sublog "both already installed (pnpm global) — skipping"
+        return 0
+    fi
     if ! npm_registry_ok; then
         log "AI agents — Claude Code, Codex"
         sublog "cannot reach the npm registry; skipping optional agent installs."
@@ -665,6 +730,18 @@ configure_tealdeer() {
 auto_update = true
 auto_update_interval_hours = 720
 EOF
+    # Check-first: only fetch the page cache when it's missing. Once present,
+    # auto_update (configured above) keeps it fresh — no network on re-runs.
+    local cache_dir
+    if [[ "$OS" == macos ]]; then
+        cache_dir="$HOME/Library/Caches/tealdeer/tldr-pages"
+    else
+        cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/tealdeer/tldr-pages"
+    fi
+    if [[ -d "$cache_dir" ]]; then
+        sublog "page cache present — auto_update keeps it fresh, skipping fetch"
+        return 0
+    fi
     sublog "fetching page cache (LANGUAGE=zh_TW:en)..."
     if ! LANGUAGE=zh_TW:en tldr --update >/dev/null 2>&1; then
         sublog "tldr --update failed; will retry on first use"
@@ -710,6 +787,12 @@ configure_terminal_profile() {
         return 0
     fi
     log "Configuring Terminal profile..."
+    # Check-first: re-running `open` spawns a Terminal window every time, so
+    # skip when tokyo-night is already the default.
+    if [[ "$(defaults read com.apple.Terminal 'Default Window Settings' 2>/dev/null)" == "tokyo-night" ]]; then
+        sublog "already default — skipping"
+        return 0
+    fi
     sublog "Installing tokyo-night profile..."
     # Open the profile to import it into Terminal
     open "$profile_path"
@@ -722,10 +805,18 @@ configure_terminal_profile() {
 
 set_login_shell() {
     log "Login shell..."
-    local zsh_path
+    local zsh_path current_shell
     zsh_path=$(command -v zsh || true)
     [[ -z "$zsh_path" ]] && { sublog "zsh not found, skipping."; return 0; }
-    if [[ "${SHELL:-}" == "$zsh_path" ]]; then
+    # Check the passwd entry, not $SHELL: the env var is frozen at session
+    # start, so after a chsh it still shows the old shell and a same-session
+    # re-run would re-prompt.
+    if [[ "$OS" == macos ]]; then
+        current_shell=$(dscl . -read "/Users/$(id -un)" UserShell 2>/dev/null | awk '{print $2}' || true)
+    else
+        current_shell=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7 || true)
+    fi
+    if [[ "${current_shell:-${SHELL:-}}" == "$zsh_path" ]]; then
         sublog "already zsh"
         return 0
     fi

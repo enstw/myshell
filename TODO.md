@@ -12,7 +12,7 @@ Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
 ## Done in stage 2
 
 1. Core apps via brew (mac) or apt + upstream installers for uv/starship/eza/glow (Ubuntu).
-1. pnpm installed standalone (`get.pnpm.io` curl|sh, both OSes); pnpm provisions the Node LTS runtime via `pnpm env use --global lts`. No separate node/npm install — this machine is pnpm-only.
+1. pnpm installed standalone (`get.pnpm.io` curl|sh, both OSes); pnpm provisions the Node LTS runtime via `pnpm runtime set node lts -g` (migrated off deprecated `pnpm env`). No separate node/npm install — this machine is pnpm-only.
 1. `batcat`/`fdfind` → `bat`/`fd` symlinks on Ubuntu.
 1. zinit cloned to `~/.local/share/zinit/zinit.git`.
 1. Writes `~/.zshenv`, `~/.zsh/{aliases,history,zoxide}.zsh`, `~/.zsh/motd.zsh` (Ubuntu), `~/.zshrc`.
@@ -29,6 +29,7 @@ Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
 1. Opt-in ENS font install from `ent.tw/font` (assumes redirect to GitHub releases JSON).
 1. Adds zsh to `/etc/shells`, offers `chsh`.
 1. Root + no-sudo containers: both stages now route privileged commands through a `$SUDO` shim that is empty when `EUID==0`, `sudo` otherwise, and fails fast with a clear message if non-root and sudo is missing.
+1. 2026-06-10 idempotency pass — every stage-2 step is now check-first on re-run: brew/apt bulk installs filter to missing packages only; `configure_git` skips when identity is set; `install_agents` skips probe+menu when both agents are in `pnpm ls -g`; `configure_tealdeer` skips `tldr --update` when the page cache exists; terminal profile checks the current default before `open`; container timezone branch compares `/etc/timezone` first; `set_login_shell` reads the passwd entry (`dscl`/`getent`) instead of stale `$SHELL`. New `fetch_config` helper: `starship.toml` / eza theme still refresh each run, but a fetch failure keeps the existing copy instead of tripping the ERR trap (an offline re-run previously died halfway). Verified with `bash -n` + isolated function tests; shellcheck unavailable on this box; full container round-trip still pending.
 
 ## Deferred (not yet in `scripts/install`)
 
