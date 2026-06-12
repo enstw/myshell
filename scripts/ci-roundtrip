@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# CI round-trip — runs INSIDE the test container (as the sudo-capable user
+# or as root). myshell is interactive by design, so this seeds every
+# recorded answer up front (see the install header's answers rule) to make
+# the run headless, runs bootstrap twice — fresh box, then idempotent
+# re-run — and asserts the results. Any prompt that slips through dies on
+# the missing /dev/tty, which is itself the test.
+#
+# MYSHELL_CI_AGENTS (default empty = none) can be set to e.g. "claude" to
+# also exercise the agent installers.
+set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+
+run_bootstrap() {
+    local label="$1" out="/tmp/ci-$1-out.log" err="/tmp/ci-$1-err.log" warnings
+    echo "=== bootstrap: $label ==="
+    if ! "$REPO_ROOT/bootstrap" >"$out" 2>"$err"; then
+        cat "$out"; cat "$err" >&2
+        fail "$label run exited nonzero"
+    fi
+    cat "$out"; cat "$err" >&2
+    warnings=$(grep -c '^warning:' "$err" || true)
+    [[ "$warnings" -eq 0 ]] || fail "$label run produced $warnings warning(s)"
+}
+
+# Seed every interactive answer: state files for the choose_* questions,
+# git config for the identity prompt.
+mkdir -p "$HOME/.local/state/myshell"
+printf '%s\n' "${MYSHELL_CI_AGENTS:-}" >"$HOME/.local/state/myshell/agents"
+printf 'no\n' >"$HOME/.local/state/myshell/fonts"
+printf 'no\n' >"$HOME/.local/state/myshell/login-shell"
+git config --global user.name  ci
+git config --global user.email ci@example.invalid
+
+run_bootstrap fresh
+
+[[ -f "$HOME/.zshenv" ]] || fail "~/.zshenv missing"
+[[ -f "$HOME/.zshrc"  ]] || fail "~/.zshrc missing"
+[[ -x "$HOME/bin/myshell-update" ]] || fail "~/bin/myshell-update missing"
+[[ -d "$HOME/.local/share/zinit/zinit.git" ]] || fail "zinit missing"
+[[ -x "$HOME/.local/share/pnpm/bin/pnpm" || -x "$HOME/.local/share/pnpm/pnpm" ]] \
+    || fail "standalone pnpm missing"
+command -v zsh >/dev/null || fail "zsh missing"
+[[ ! -f /etc/dpkg/dpkg.cfg.d/excludes ]] || fail "system still minimized (unminimize did not run)"
+
+run_bootstrap rerun
+
+echo "CI round-trip OK"

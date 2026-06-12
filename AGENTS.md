@@ -10,6 +10,7 @@ Context for AI agents working in this repository.
 
 - **This is a single-developer repo. Do not create branches or pull requests.** Commit directly to `main`.
 - Commit (and push) only when the user asks.
+- Run `scripts/check` before committing (syntax + byte-identical output helpers). CI re-runs it plus two headless container round-trips on every push.
 
 ## Architecture
 

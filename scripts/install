@@ -13,6 +13,16 @@ set -Eeuo pipefail
 #
 # Cross-cutting rules:
 #
+# - Architecture: stage 2 stays ONE file on purpose. curl|sh mode runs
+#   bootstrap before any checkout exists and myshell-update is deployed
+#   standalone to ~/bin, so sourced libs can't reach all three scripts —
+#   splitting into modules would multiply the byte-identical-copy problem,
+#   not solve it. Adding a step: write a check-first function (a re-run must
+#   be quiet), prompt only via gather_answers + a recorded answer under
+#   $STATE_DIR, fail hard only if the shell is broken without it (otherwise
+#   warn), add it to main() in dependency order, and cover the result in
+#   scripts/ci-roundtrip.
+#
 # - Python tooling: `uv` is the only sanctioned Python tool. Never pip, pipx,
 #   python -m venv, pyenv, or poetry. Translate upstream `pip install X` or
 #   `pipx install X` to `uv tool install X` or a `uv venv` + `uv pip install`.
@@ -342,6 +352,45 @@ install_apps_ubuntu() {
         install_eza_ubuntu
         install_glow_ubuntu
     fi
+}
+
+unminimize_ubuntu() {
+    # Minimized Ubuntu images (cloud/docker bases) strip man pages and docs
+    # via dpkg path-excludes. This machine is for interactive use, so restore
+    # them. The excludes file is the minimized marker and unminimize removes
+    # it when done — which makes this check-first on re-runs.
+    [[ "$OS" == ubuntu ]] || return 0
+    log "Unminimizing Ubuntu (restore man pages/docs for interactive use)..."
+    if [[ ! -f /etc/dpkg/dpkg.cfg.d/excludes ]]; then
+        sublog "not minimized (or already unminimized) — skipping"
+        return 0
+    fi
+    if [[ "$NO_SUDO" == "1" ]]; then
+        warn "no sudo — skipping unminimize; ask root to run it"
+        return 0
+    fi
+    # The script moved into its own package on Ubuntu 23.04+; older images
+    # ship it at /usr/local/sbin, which may not be on a user PATH.
+    local unmin
+    if command -v unminimize >/dev/null; then
+        unmin=$(command -v unminimize)
+    elif [[ -x /usr/local/sbin/unminimize ]]; then
+        unmin=/usr/local/sbin/unminimize
+    else
+        sublog "installing unminimize..."
+        if ! $SUDO apt-get install -y unminimize; then
+            warn "could not install unminimize — skipping"
+            return 0
+        fi
+        unmin=$(command -v unminimize || echo /usr/bin/unminimize)
+    fi
+    sublog "running unminimize (reinstalls docs — takes a few minutes)..."
+    # `yes |` feeds its confirmation prompts; yes then dies of SIGPIPE when
+    # unminimize exits, which pipefail would misread as a failure — disable
+    # pipefail around the pipeline so the status is unminimize's own.
+    set +o pipefail
+    yes | $SUDO "$unmin" || warn "unminimize failed — re-run to retry"
+    set -o pipefail
 }
 
 install_uv_ubuntu() {
@@ -1013,6 +1062,9 @@ main() {
     # any package work silences the warnings.
     configure_locale
     install_apps
+    # After install_apps: unminimize reinstalls docs for everything already
+    # installed, so base packages added above still end up with man pages.
+    unminimize_ubuntu
     deploy_dotfiles
     deploy_scripts
     configure_git

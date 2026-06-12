@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Static gate — syntax-check all three scripts and verify the output-helper
+# blocks are byte-identical (the install header rule says drift between the
+# copies is a bug; this makes the rule mechanical). Run it locally before
+# committing; CI runs it as its first job.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+sh   -n bootstrap
+bash -n scripts/install
+bash -n scripts/myshell-update
+echo "syntax: ok"
+
+block() { sed -n '/^WARNINGS=0$/,/^die()/p' "$1"; }
+ref=$(block bootstrap)
+[[ -n "$ref" ]] || { echo "error: output-helper block not found in bootstrap" >&2; exit 1; }
+for f in scripts/install scripts/myshell-update; do
+    if [[ "$(block "$f")" != "$ref" ]]; then
+        echo "error: output-helper block in $f differs from bootstrap (header rule: byte-identical)" >&2
+        diff <(printf '%s\n' "$ref") <(block "$f") >&2 || true
+        exit 1
+    fi
+done
+echo "output-helper blocks: byte-identical"
+echo "ok"

@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/check
+
+  # Both round-trips run in the stock ubuntu:24.04 docker image, which is
+  # minimized (no man pages/docs) — the harshest realistic base, and it
+  # exercises the unminimize step. scripts/ci-roundtrip seeds the recorded
+  # answers so the interactive bootstrap runs headless, then runs it twice
+  # (fresh + idempotent re-run) and asserts the results.
+  roundtrip-sudo-user:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: bootstrap as sudo-capable user in minimized ubuntu:24.04
+        run: |
+          docker run --rm -v "$PWD":/myshell:ro ubuntu:24.04 bash -ec '
+            apt-get update
+            apt-get install -y sudo curl git
+            useradd -m -s /bin/bash t
+            echo "t ALL=(ALL) NOPASSWD:ALL" >>/etc/sudoers
+            cp -r /myshell /home/t/myshell && chown -R t:t /home/t/myshell
+            su - t -c "/home/t/myshell/scripts/ci-roundtrip"
+          '
+
+  roundtrip-root:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: bootstrap as root (no sudo installed) in minimized ubuntu:24.04
+        run: |
+          docker run --rm -v "$PWD":/myshell:ro ubuntu:24.04 bash -ec '
+            apt-get update
+            apt-get install -y curl git
+            cp -r /myshell /root/myshell
+            /root/myshell/scripts/ci-roundtrip
+          '
