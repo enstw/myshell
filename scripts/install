@@ -24,25 +24,53 @@ set -Eeuo pipefail
 #
 # - Timezone: Asia/Taipei.
 #
-# - AI agents: optional. Claude Code and Codex install globally via `pnpm add -g`
-#   into $PNPM_HOME (the numbered menu). OpenCode and Antigravity CLI (`agy`, the
-#   replacement for the retired Gemini CLI) are standalone self-updating binaries
-#   — separate opt-in prompts, NOT pnpm-managed (see the bun note) — because
-#   their own updaters would fight a package manager. agy lands in ~/.local/bin
-#   (already on PATH); opencode in ~/.opencode/bin.
+# - AI agents: optional. ONE menu covers all four — Claude Code, Codex,
+#   OpenCode, Antigravity CLI (`agy`, the replacement for the retired Gemini
+#   CLI) — and the normalized answer is recorded in
+#   ~/.local/state/myshell/agents so re-runs honor it (including "none")
+#   instead of re-asking; delete the file to choose again. Codex installs via
+#   `pnpm add -g` into $PNPM_HOME (static binary, no self-updater, so
+#   `pnpm update -g` is its update path). Claude Code, OpenCode, and agy are
+#   standalone self-updating binaries, NOT pnpm-managed (see the bun note):
+#   their own updaters would fight a package manager, and $PNPM_HOME precedes
+#   ~/.local/bin in PATH so a stale pnpm copy would shadow them. claude and
+#   agy land in ~/.local/bin (already on PATH); opencode in ~/.opencode/bin.
 #
 # - tealdeer: the Rust `tealdeer`, not the Python `tldr`. Page language comes
 #   from $LANGUAGE (tealdeer has no language option of its own).
 #
 # - Node/pnpm: this machine is pnpm-only. pnpm is installed standalone (the
 #   self-contained @pnpm/exe build via get.pnpm.io) on both macOS and Ubuntu,
-#   and pnpm itself provisions the Node runtime (`pnpm env use --global lts`).
+#   and pnpm itself provisions the Node runtime (`pnpm runtime set node lts -g`).
 #   There is no separate `node`/`npm` install: npm/npx ship inside pnpm's Node
 #   but are not used. Global bins live in $PNPM_HOME; PATH pickup is in ~/.zshenv.
 #
 # - bun: installed via its own bun.sh installer into ~/.bun — a peer runtime
 #   required by the gstack skill, NOT part of the pnpm-only policy. It doesn't
 #   go through npm, so leave it alone; it isn't a stray npm-ish tool to purge.
+#
+# - Interactive answers: every prompt runs up front in gather_answers, and
+#   each answer is recorded under ~/.local/state/myshell/ — the user's
+#   decision, not system state, is the idempotency key, so re-runs are quiet
+#   and the long package phase runs unattended (chsh may still ask for a
+#   password at the very end). Delete a state file to be asked again.
+#   Headless runs: pre-seed the state files and git identity beforehand.
+#
+# - Failure policy: required tools abort the run via the ERR trap (brew/apt
+#   base packages, uv, starship, zinit, the eza/glow apt repos) — a shell
+#   without them is broken anyway. Optional or self-healing steps fail soft
+#   (pnpm, bun, AI agents, fetched configs, tealdeer cache, fonts): a
+#   transient network blip must not kill a bootstrap halfway (2026-05-10).
+#
+# - Output vocabulary: log (step header), sublog (detail), warn (fail-soft
+#   failures and work deferred to the operator — counted and reported in the
+#   final Done line), die (fatal). log/sublog go to stdout; warn/die/ERR trap
+#   to stderr, so an unattended run is audited with `grep '^warning:'`.
+#   Definitions are POSIX-sh-safe and deliberately duplicated byte-identical
+#   across bootstrap, scripts/install, and scripts/myshell-update (one runs
+#   pre-checkout, one is deployed standalone — no sourced lib can reach all
+#   three); drift between the copies is a bug. Grammar: in-progress lines end
+#   in "...", results/skips read "<thing> — skipping" with no trailing period.
 #
 # - zsh layout: ~/.zshenv is sourced by every zsh invocation — PATH, locale,
 #   umask, anything non-interactive scripts or cron need. ~/.zsh/*.zsh is
@@ -61,7 +89,7 @@ case "$(uname -s)" in
 esac
 
 # pnpm home: unified across macOS and Ubuntu so install-time `pnpm add -g` and
-# `pnpm env` target a known dir, and global bins are reachable for the rest of
+# `pnpm runtime` target a known dir, and global bins are reachable for the rest of
 # this run. The generated ~/.zshenv exports the same value for login shells.
 export PNPM_HOME="$HOME/.local/share/pnpm"
 mkdir -p "$PNPM_HOME"
@@ -70,9 +98,17 @@ mkdir -p "$PNPM_HOME"
 # process. pnpm 11 shims live in $PNPM_HOME/bin; old layout used $PNPM_HOME.
 export PATH="$PNPM_HOME/bin:$PNPM_HOME:$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
-log()     { printf '\n==> %s\n' "$*"; }
-sublog()  { printf '    %s\n' "$*"; }
-die()     { printf 'error: %s\n' "$*" >&2; exit 1; }
+# Recorded interactive answers live here (see the header rule): one file per
+# question, written by the choose_* helpers, honored on every re-run.
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/myshell"
+
+# Output vocabulary (see the header rule) — deliberately duplicated
+# byte-identical in ../bootstrap and ./myshell-update; drift is a bug.
+WARNINGS=0
+log()    { printf '\n==> %s\n' "$*"; }
+sublog() { printf '    %s\n' "$*"; }
+warn()   { printf 'warning: %s\n' "$*" >&2; WARNINGS=$((WARNINGS+1)); }
+die()    { printf 'error: %s\n' "$*" >&2; exit 1; }
 trap 'rc=$?; printf "error: failed at line %s: %s (exit %s)\n" "$LINENO" "$BASH_COMMAND" "$rc" >&2; exit "$rc"' ERR
 
 # sudo shim:
@@ -91,7 +127,7 @@ elif command -v sudo >/dev/null 2>&1; then
     SUDO=sudo
     NO_SUDO=0
 else
-    printf '==> No sudo and not root — running no-sudo bootstrap (skipping system-level steps).\n'
+    log "No sudo and not root — running no-sudo bootstrap (skipping system-level steps)"
     SUDO=""
     NO_SUDO=1
 fi
@@ -114,6 +150,79 @@ confirm() {
     [[ "$reply" =~ ^[Yy] ]]
 }
 
+# Pre-warm sudo and keep its timestamp fresh for the whole run, so the
+# password prompt happens up front (with the other questions) instead of at
+# a random later sudo step after a long brew/apt phase. The keepalive loop
+# watches the script's PID and exits on its own within a minute of the end.
+warm_sudo() {
+    [[ -n "$SUDO" ]] || return 0
+    $SUDO -v
+    ( while kill -0 "$$" 2>/dev/null; do $SUDO -n -v 2>/dev/null || true; sleep 60; done ) &
+}
+
+# --- gather_answers: every interactive question, asked once, up front -------
+# Each choose_* helper is also called at its point of use, so a standalone
+# step still prompts — but on a normal run the answer already exists by then.
+
+GIT_NAME=""
+GIT_EMAIL=""
+gather_git_identity() {
+    # git config is its own record for this one — no state file needed. On a
+    # bare box git may not exist yet, so stash the answers in globals and let
+    # configure_git apply them after install_apps has provided git.
+    local current_name current_email
+    current_name=$(git config --global user.name  2>/dev/null || true)
+    current_email=$(git config --global user.email 2>/dev/null || true)
+    [[ -n "$current_name" && -n "$current_email" ]] && return 0
+    GIT_NAME=$(ask "git user.name?"  "$current_name")
+    GIT_EMAIL=$(ask "git user.email?" "$current_email")
+}
+
+choose_agents() {
+    [[ -f "$STATE_DIR/agents" ]] && return 0
+    sublog "AI agents — pick numbers, comma-separated: 0 none, 1 Claude Code, 2 Codex, 3 OpenCode, 4 agy, 5 all."
+    sublog "Names work too: all, none, or e.g. claude,opencode."
+    local selected
+    selected=$(normalize_agent_choice "$(ask "Install which agents?" "1,2")")
+    mkdir -p "$STATE_DIR"
+    printf '%s\n' "$selected" >"$STATE_DIR/agents"
+    sublog "choice recorded (${selected:-none}) — rm $STATE_DIR/agents to change it"
+}
+
+choose_fonts() {
+    [[ -f "$STATE_DIR/fonts" ]] && return 0
+    local answer=no
+    if [[ -f "$(ens_fonts_dir)/ENSFont.ttc" ]]; then
+        answer=yes # already installed — never ask about it again
+    elif confirm "Install ENS fonts from github.com/enstw/font?"; then
+        answer=yes
+    fi
+    mkdir -p "$STATE_DIR"
+    printf '%s\n' "$answer" >"$STATE_DIR/fonts"
+}
+
+choose_login_shell() {
+    [[ -f "$STATE_DIR/login-shell" ]] && return 0
+    local current answer=no
+    current=$(current_login_shell)
+    if [[ "${current##*/}" == zsh ]]; then
+        answer=yes # already on zsh — don't ask about a switch that happened
+    elif confirm "Set login shell to zsh?"; then
+        answer=yes
+    fi
+    mkdir -p "$STATE_DIR"
+    printf '%s\n' "$answer" >"$STATE_DIR/login-shell"
+}
+
+gather_answers() {
+    log "Questions first — the rest of the run is unattended (re-runs skip answered ones)"
+    warm_sudo
+    gather_git_identity
+    choose_agents
+    choose_fonts
+    choose_login_shell
+}
+
 install_apps() {
     log "Installing core apps..."
     case "$OS" in
@@ -128,7 +237,7 @@ install_apps() {
 install_pnpm() {
     # Standalone pnpm (the self-contained @pnpm/exe build) on both OSes — same
     # curl|sh pattern as bun/uv/starship/Homebrew. This build bundles its own
-    # Node and later provisions a runtime via `pnpm env`.
+    # Node and later provisions a runtime via `pnpm runtime set node lts -g`.
     #
     # NOT the Homebrew formula: brew's `pnpm` is the plain JS build that needs a
     # separate `node` to run ("pnpm requires a Node installation to function").
@@ -151,12 +260,12 @@ install_pnpm() {
     # so the home is identical on macOS and Ubuntu. It also appends a PNPM_HOME
     # block to ~/.zshrc/~/.bashrc — harmless; our generated ~/.zshenv owns PATH.
     if ! curl -fsSL https://get.pnpm.io/install.sh | sh -; then
-        sublog "pnpm install failed; continuing (agents/node steps will skip)"
+        warn "pnpm install failed; continuing (node/Codex steps will skip)"
         return 0
     fi
     [[ -x "$PNPM_HOME/bin/pnpm" || -x "$PNPM_HOME/pnpm" ]] \
         && sublog "pnpm installed" \
-        || sublog "pnpm installer finished but no pnpm binary found; continuing"
+        || warn "pnpm installer finished but no pnpm binary found; continuing"
 }
 
 install_apps_macos() {
@@ -187,7 +296,7 @@ install_apps_macos() {
 
 install_apps_ubuntu() {
     if [[ "$NO_SUDO" == "1" ]]; then
-        sublog "no sudo — skipping apt installs; system packages assumed pre-installed via root"
+        warn "no sudo — skipping apt installs; system packages assumed pre-installed via root"
     else
         # Check-first: apt-get install -y is idempotent but slow when invoked
         # for already-present packages — only ask it for what dpkg lacks.
@@ -203,6 +312,13 @@ install_apps_ubuntu() {
         if [[ ${#missing[@]} -eq 0 ]]; then
             sublog "apt base packages already installed — skipping"
         else
+            # Standalone stage-2 runs (without bootstrap) may sit on a stale
+            # or empty index; bootstrap exports MYSHELL_APT_UPDATED after its
+            # own apt-get update so the normal path doesn't update twice.
+            if [[ "${MYSHELL_APT_UPDATED:-0}" != 1 ]]; then
+                sublog "apt-get update (no fresh index from stage 1)"
+                $SUDO apt-get update
+            fi
             sublog "apt install ${missing[*]}"
             $SUDO apt-get install -y "${missing[@]}"
         fi
@@ -216,7 +332,7 @@ install_apps_ubuntu() {
     install_uv_ubuntu
     install_starship_ubuntu
     if [[ "$NO_SUDO" == "1" ]]; then
-        sublog "no sudo — skipping eza/glow (require apt-repo setup under /etc)"
+        warn "no sudo — skipping eza/glow (require apt-repo setup under /etc)"
     else
         install_eza_ubuntu
         install_glow_ubuntu
@@ -268,7 +384,7 @@ install_bun() {
     command -v bun >/dev/null && return 0
     sublog "Installing bun (bun.sh installer)..."
     if ! curl -fsSL https://bun.sh/install | bash; then
-        sublog "bun install failed; continuing without bun"
+        warn "bun install failed; continuing without bun"
         return 0
     fi
     if [[ -x "$HOME/.bun/bin/bun" ]]; then
@@ -276,7 +392,7 @@ install_bun() {
     elif command -v bun >/dev/null; then
         sublog "bun installed ($(command -v bun))"
     else
-        sublog "bun installer exited successfully, but bun was not found; continuing"
+        warn "bun installer exited successfully, but bun was not found; continuing"
     fi
 }
 
@@ -293,7 +409,8 @@ deploy_dotfiles() {
 
     sublog "~/.zshenv"
     cat >"$HOME/.zshenv" <<'EOF'
-# Generated by myshell/scripts/install. Sourced by every zsh invocation.
+# Generated by myshell/scripts/install — do not hand-edit (rewritten on
+# every bootstrap run). Sourced by every zsh invocation.
 
 typeset -U path PATH
 
@@ -331,7 +448,8 @@ EOF
 
     sublog "~/.zsh/aliases.zsh"
     cat >"$HOME/.zsh/aliases.zsh" <<'EOF'
-# Generated by myshell/scripts/install. Guard each alias on binary presence.
+# Generated by myshell/scripts/install — do not hand-edit (rewritten on
+# every bootstrap run). Guard each alias on binary presence.
 
 command -v eza      >/dev/null && alias ls='eza --icons'
 command -v eza      >/dev/null && alias ll='eza -la --icons --git'
@@ -402,7 +520,10 @@ EOF
 
     sublog "~/.zshrc"
     cat >"$HOME/.zshrc" <<'EOF'
-# Generated by myshell/scripts/install.
+# Generated by myshell/scripts/install — do not hand-edit (rewritten on
+# every bootstrap run). Personal config goes in your own ~/.zsh/<name>.zsh:
+# everything in that directory is sourced below, and the installer only
+# ever rewrites its own files there.
 
 # zinit
 ZINIT_HOME="$HOME/.local/share/zinit/zinit.git"
@@ -438,9 +559,9 @@ fetch_config() {
     else
         rm -f "$tmp"
         if [[ -f "$dest" ]]; then
-            sublog "download failed; keeping existing $dest"
+            warn "download failed; keeping existing $dest"
         else
-            sublog "download failed; $dest not installed (re-run to retry)"
+            warn "download failed; $dest not installed (re-run to retry)"
         fi
     fi
 }
@@ -485,20 +606,22 @@ deploy_scripts() {
 }
 configure_git() {
     log "Configuring git identity..."
-    local current_name current_email new_name new_email
+    local current_name current_email
     current_name=$(git config --global user.name  2>/dev/null || true)
     current_email=$(git config --global user.email 2>/dev/null || true)
-    # Check-first: only prompt when the identity is incomplete, so re-runs
-    # stay non-interactive. `git config --global` is the tool for changing it.
+    # Check-first: skip when the identity is complete, so re-runs stay
+    # non-interactive. `git config --global` is the tool for changing it.
     if [[ -n "$current_name" && -n "$current_email" ]]; then
         sublog "already configured: $current_name <$current_email> — skipping"
         return 0
     fi
-    new_name=$(ask "git user.name?"  "$current_name")
-    new_email=$(ask "git user.email?" "$current_email")
-    git config --global user.name  "$new_name"
-    git config --global user.email "$new_email"
-    sublog "$new_name <$new_email>"
+    # Answers come from gather_answers; ask here only if this step is somehow
+    # reached without them (e.g. the user answered with empty strings).
+    [[ -n "$GIT_NAME"  ]] || GIT_NAME=$(ask "git user.name?"  "$current_name")
+    [[ -n "$GIT_EMAIL" ]] || GIT_EMAIL=$(ask "git user.email?" "$current_email")
+    git config --global user.name  "$GIT_NAME"
+    git config --global user.email "$GIT_EMAIL"
+    sublog "$GIT_NAME <$GIT_EMAIL>"
 }
 
 configure_locale() {
@@ -509,7 +632,7 @@ configure_locale() {
     fi
     if [[ "$NO_SUDO" == "1" ]]; then
         log "Locale generation..."
-        sublog "no sudo — skipping locale-gen; ensure root has run: locale-gen en_US.UTF-8 en_GB.UTF-8 zh_TW.UTF-8"
+        warn "no sudo — skipping locale-gen; ensure root has run: locale-gen en_US.UTF-8 en_GB.UTF-8 zh_TW.UTF-8"
         return 0
     fi
     log "Generating locales (en_US, en_GB, zh_TW — .UTF-8)..."
@@ -537,7 +660,7 @@ configure_locale() {
 configure_timezone() {
     if [[ "$NO_SUDO" == "1" ]]; then
         log "Timezone..."
-        sublog "no sudo — skipping; ensure root has set timezone to Asia/Taipei"
+        warn "no sudo — skipping; ensure root has set timezone to Asia/Taipei"
         return 0
     fi
     log "Setting timezone to Asia/Taipei..."
@@ -570,7 +693,7 @@ configure_timezone() {
 }
 
 setup_pnpm() {
-    command -v pnpm >/dev/null || { log "pnpm setup"; sublog "pnpm not found, skipping"; return 0; }
+    command -v pnpm >/dev/null || { log "pnpm setup"; warn "pnpm not found — skipping"; return 0; }
     log "Provisioning Node LTS via pnpm..."
     # Check-first: if pnpm already provisioned a Node runtime, skip the network
     # re-resolve. Bootstrap only guarantees a runtime exists; refreshing it to
@@ -579,82 +702,84 @@ setup_pnpm() {
         sublog "Node already provisioned ($(node --version)) — skipping; 'u' refreshes LTS"
         return 0
     fi
-    # pnpm supplies the Node runtime the AI agents need; this also lands
-    # node/npm/npx symlinks in pnpm's global bin dir (already on PATH).
+    # pnpm supplies the Node runtime that pnpm-global JS packages (Codex's
+    # npm launcher) and general dev work need; this also lands node/npm/npx
+    # symlinks in pnpm's global bin dir (already on PATH).
     if pnpm runtime set node lts -g; then
         sublog "Node LTS active ($(node --version 2>/dev/null || echo 'pending new shell'))"
     else
-        sublog "pnpm runtime set node lts failed; agents may lack a node runtime"
+        warn "pnpm runtime set node lts failed; Codex may lack a node runtime"
     fi
+}
+
+# normalize_agent_choice RAW — echo the canonical comma-separated agent list
+# (subset of claude,codex,opencode,agy) for a menu answer of numbers and/or
+# names. Unknown tokens warn (stderr — stdout is captured by the caller) and
+# are dropped; duplicates collapse.
+normalize_agent_choice() {
+    local raw="$1" token name names=()
+    local -A seen=()
+    case "$raw" in
+        0|none|"") echo ""; return 0 ;;
+    esac
+    for token in ${raw//,/ }; do
+        name=""
+        case "$token" in
+            5|all) echo "claude,codex,opencode,agy"; return 0 ;;
+            1|claude|claude-code) name=claude ;;
+            2|codex)              name=codex ;;
+            3|opencode)           name=opencode ;;
+            4|agy|antigravity)    name=agy ;;
+            0|none) ;;
+            *) warn "unknown agent '$token' (ignoring)" ;;
+        esac
+        [[ -z "$name" || -n "${seen[$name]:-}" ]] && continue
+        seen[$name]=1
+        names+=("$name")
+    done
+    (IFS=,; echo "${names[*]-}")
 }
 
 install_agents() {
-    command -v pnpm >/dev/null || { log "AI agents"; sublog "pnpm not found, skipping"; return 0; }
-    # Check-first: when both agents are already in the pnpm global set, skip
-    # the registry probe and the menu so re-runs are quiet (same pattern as
-    # install_fonts). A partial install (one of two) still prompts.
-    local installed
-    installed=$(pnpm ls -g --depth=0 2>/dev/null || true)
-    if grep -q '@anthropic-ai/claude-code' <<<"$installed" \
-       && grep -q '@openai/codex' <<<"$installed"; then
-        log "AI agents — Claude Code, Codex"
-        sublog "both already installed (pnpm global) — skipping"
+    log "AI agents — Claude Code, Codex, OpenCode, Antigravity (agy)"
+    # One menu for all four agents; "0 none" really means none (no follow-up
+    # prompts). The recorded answer (normally gathered up front) is the
+    # idempotency key — a partial or empty choice is honored on re-runs
+    # instead of re-asking; it's NOT keyed on which binaries happen to be
+    # installed. Each per-agent installer is still check-first.
+    choose_agents
+    local selected agent
+    selected=$(<"$STATE_DIR/agents")
+    if [[ -z "$selected" ]]; then
+        sublog "no agents selected (rm $STATE_DIR/agents to re-choose) — skipping"
         return 0
     fi
-    if ! npm_registry_ok; then
-        log "AI agents — Claude Code, Codex"
-        sublog "cannot reach the npm registry; skipping optional agent installs."
-        sublog "Retry later with: pnpm add -g @anthropic-ai/claude-code @openai/codex"
-        return 0
-    fi
-    log "AI agents — Claude Code, Codex"
-    sublog "Pick a number: 0 none, 1 Claude, 2 Codex, 3 Claude+Codex."
-    sublog "Names still work too: all, none, or comma-separated claude,codex."
-    local choice
-    choice=$(ask "Install which agents?" "3")
-    case "$choice" in
-        0|none|"") sublog "skipping all agents"; return 0 ;;
-        3|all)
-            install_agent "Claude Code" install_claude_code
-            install_agent "OpenAI Codex CLI" install_codex
-            ;;
-        1|claude|claude-code)
-            install_agent "Claude Code" install_claude_code
-            ;;
-        2|codex)
-            install_agent "OpenAI Codex CLI" install_codex
-            ;;
-        *)
-            local agent
-            for agent in $(printf '%s\n' "$choice" | tr ',' ' '); do
-                case "$agent" in
-                    claude|claude-code) install_agent "Claude Code" install_claude_code ;;
-                    codex)              install_agent "OpenAI Codex CLI" install_codex ;;
-                    "") ;;
-                    *) sublog "unknown agent '$agent' (skipping)" ;;
-                esac
-            done
-            ;;
-    esac
+    sublog "selected: $selected (rm $STATE_DIR/agents to re-choose)"
+    for agent in ${selected//,/ }; do
+        case "$agent" in
+            claude)   install_agent "Claude Code"      install_claude_code ;;
+            codex)    install_agent "OpenAI Codex CLI" install_codex ;;
+            opencode) install_agent "OpenCode"         install_opencode ;;
+            agy)      install_agent "Antigravity CLI"  install_agy ;;
+            *)        warn "unknown agent '$agent' in $STATE_DIR/agents (skipping)" ;;
+        esac
+    done
 }
 
 install_opencode() {
-    # OpenCode — standalone AI agent, installed like bun: its own prebuilt
-    # binary (no npm/node) into ~/.opencode/bin. Deliberately NOT a pnpm-managed
-    # agent — it self-updates via `opencode upgrade`, so keeping it out of the
-    # pnpm global set avoids the package-manager-vs-self-updater conflict that
-    # retired Gemini. No sudo; works under NO_SUDO.
-    log "OpenCode — standalone AI agent"
+    # OpenCode — standalone prebuilt binary (no npm/node) in ~/.opencode/bin,
+    # installed like bun. Self-updates via `opencode upgrade`, so it stays out
+    # of the pnpm global set (see the header's agent rule). No sudo; works
+    # under NO_SUDO. Fail-soft via the install_agent wrapper.
+    log "Installing OpenCode..."
     if [[ -x "$HOME/.opencode/bin/opencode" ]]; then
         sublog "already installed (~/.opencode/bin) — skipping"
         return 0
     fi
-    confirm "Install OpenCode?" || { sublog "skipping"; return 0; }
     sublog "opencode.ai installer (--no-modify-path; ~/.zshenv owns PATH)"
     # --no-modify-path: the installer would otherwise append PATH lines to
     # ~/.zshrc/~/.zshenv; our generated ~/.zshenv owns PATH (same as bun).
-    curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path \
-        || sublog "OpenCode install failed; continuing with the rest of bootstrap"
+    curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path
 }
 
 install_agy() {
@@ -662,17 +787,15 @@ install_agy() {
     # the retired Gemini CLI. Self-updating (`agy update`), node-free, no sudo.
     # Installs to ~/.local/bin/agy, which is already on PATH via ~/.zshenv — a
     # peer like opencode/bun, deliberately not a pnpm agent.
-    log "Antigravity CLI (agy) — standalone AI agent"
+    log "Installing Antigravity CLI (agy)..."
     if command -v agy >/dev/null || [[ -x "$HOME/.local/bin/agy" ]]; then
         sublog "already installed ($(command -v agy 2>/dev/null || echo "$HOME/.local/bin/agy")) — skipping"
         return 0
     fi
-    confirm "Install Antigravity CLI (agy)?" || { sublog "skipping"; return 0; }
     sublog "antigravity.google installer (binary -> ~/.local/bin/agy)"
     # The installer finishes by running `agy install` to configure PATH/aliases;
     # ~/.local/bin is already on our PATH, so that step is redundant but harmless.
-    curl -fsSL https://antigravity.google/cli/install.sh | bash \
-        || sublog "agy install failed; continuing with the rest of bootstrap"
+    curl -fsSL https://antigravity.google/cli/install.sh | bash
 }
 
 npm_registry_ok() {
@@ -686,24 +809,43 @@ install_agent() {
     if "$@"; then
         return 0
     fi
-    sublog "$label install failed; continuing with the rest of bootstrap"
+    warn "$label install failed; continuing with the rest of bootstrap"
     return 0
 }
 
 install_claude_code() {
+    # Claude Code — self-updates in place, so it's standalone-managed like
+    # opencode/agy (native claude.ai installer -> ~/.local/bin/claude), NOT
+    # pnpm: an auto-updater writing into a pnpm-owned tree fights pnpm, and
+    # $PNPM_HOME precedes ~/.local/bin in PATH so a leftover pnpm copy from an
+    # older bootstrap would shadow the native binary — migrate it out first
+    # (config in ~/.claude is untouched; same pattern as the brew-pnpm purge).
     log "Installing Claude Code..."
     if pnpm ls -g --depth=0 2>/dev/null | grep -q '@anthropic-ai/claude-code'; then
-        sublog "already installed (pnpm global) — skipping"
+        sublog "removing pnpm-managed copy in favor of the native install..."
+        pnpm remove -g @anthropic-ai/claude-code || true
+    fi
+    if [[ -x "$HOME/.local/bin/claude" ]]; then
+        sublog "already installed (~/.local/bin/claude) — skipping"
         return 0
     fi
-    sublog "pnpm add -g @anthropic-ai/claude-code"
-    pnpm add -g @anthropic-ai/claude-code
+    sublog "claude.ai installer (binary -> ~/.local/bin/claude)"
+    curl -fsSL https://claude.ai/install.sh | bash
 }
 
 install_codex() {
+    # Codex — a static binary delivered through npm with no self-updater, so
+    # the pnpm global set is the right home (`pnpm update -g` in
+    # myshell-update is its update path). The registry probe lives here, next
+    # to the only agent that needs the npm registry.
     log "Installing OpenAI Codex CLI..."
     if pnpm ls -g --depth=0 2>/dev/null | grep -q '@openai/codex'; then
         sublog "already installed (pnpm global) — skipping"
+        return 0
+    fi
+    command -v pnpm >/dev/null || { warn "pnpm not found — skipping (Codex installs via pnpm)"; return 0; }
+    if ! npm_registry_ok; then
+        warn "cannot reach the npm registry; retry later with: pnpm add -g @openai/codex"
         return 0
     fi
     sublog "pnpm add -g @openai/codex"
@@ -711,7 +853,7 @@ install_codex() {
 }
 
 configure_tealdeer() {
-    command -v tldr >/dev/null || { log "tealdeer config"; sublog "tldr not found, skipping"; return 0; }
+    command -v tldr >/dev/null || { log "tealdeer config"; warn "tldr not found — skipping"; return 0; }
     log "Configuring tealdeer (auto-update, zh_TW + en pages)..."
     local config_dir
     if [[ "$OS" == macos ]]; then
@@ -744,7 +886,15 @@ EOF
     fi
     sublog "fetching page cache (LANGUAGE=zh_TW:en)..."
     if ! LANGUAGE=zh_TW:en tldr --update >/dev/null 2>&1; then
-        sublog "tldr --update failed; will retry on first use"
+        warn "tldr --update failed; will retry on first use"
+    fi
+}
+
+ens_fonts_dir() {
+    if [[ "$OS" == macos ]]; then
+        echo "$HOME/Library/Fonts"
+    else
+        echo "$HOME/.local/share/fonts"
     fi
 }
 
@@ -753,23 +903,24 @@ install_fonts() {
     # github.com/enstw/font. GitHub's /releases/latest/download/<name> URL is
     # a stable redirect to that asset, so no jq/tarball dance is needed.
     local fonts_dir
-    if [[ "$OS" == macos ]]; then
-        fonts_dir="$HOME/Library/Fonts"
-    else
-        fonts_dir="$HOME/.local/share/fonts"
-    fi
-    # Check-first: skip (without prompting) when the font is already present, so
-    # re-running bootstrap to sync neither re-downloads nor re-asks.
+    fonts_dir=$(ens_fonts_dir)
+    # Check-first: an installed font wins; otherwise the recorded answer
+    # (gathered up front) decides — a "no" is remembered across re-runs.
     if [[ -f "$fonts_dir/ENSFont.ttc" ]]; then
         log "ENS fonts already installed ($fonts_dir/ENSFont.ttc) — skipping"
         return 0
     fi
-    confirm "Install ENS fonts from github.com/enstw/font?" || return 0
+    choose_fonts
+    if [[ "$(<"$STATE_DIR/fonts")" != yes ]]; then
+        log "ENS fonts — declined (rm $STATE_DIR/fonts to be asked again)"
+        return 0
+    fi
+    log "Installing ENS fonts..."
     mkdir -p "$fonts_dir"
     sublog "Downloading ENSFont.ttc (latest release)..."
     if ! curl -fsSL -o "$fonts_dir/ENSFont.ttc" \
         https://github.com/enstw/font/releases/latest/download/ENSFont.ttc; then
-        sublog "Download failed; skipping."
+        warn "ENSFont.ttc download failed — skipping (re-run to retry)"
         return 0
     fi
     if [[ "$OS" == ubuntu ]] && command -v fc-cache >/dev/null; then
@@ -783,7 +934,7 @@ configure_terminal_profile() {
     fi
     local profile_path="$REPO_ROOT/assets/tokyo-night.terminal"
     if [[ ! -f "$profile_path" ]]; then
-        sublog "Terminal profile $profile_path not found, skipping."
+        warn "Terminal profile $profile_path not found — skipping"
         return 0
     fi
     log "Configuring Terminal profile..."
@@ -803,38 +954,49 @@ configure_terminal_profile() {
     defaults write com.apple.Terminal "Startup Window Settings" -string "tokyo-night"
 }
 
+# Check the passwd entry, not $SHELL: the env var is frozen at session
+# start, so after a chsh it still shows the old shell and a same-session
+# re-run would re-prompt.
+current_login_shell() {
+    if [[ "$OS" == macos ]]; then
+        dscl . -read "/Users/$(id -un)" UserShell 2>/dev/null | awk '{print $2}' || true
+    else
+        getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7 || true
+    fi
+}
+
 set_login_shell() {
     log "Login shell..."
     local zsh_path current_shell
     zsh_path=$(command -v zsh || true)
-    [[ -z "$zsh_path" ]] && { sublog "zsh not found, skipping."; return 0; }
-    # Check the passwd entry, not $SHELL: the env var is frozen at session
-    # start, so after a chsh it still shows the old shell and a same-session
-    # re-run would re-prompt.
-    if [[ "$OS" == macos ]]; then
-        current_shell=$(dscl . -read "/Users/$(id -un)" UserShell 2>/dev/null | awk '{print $2}' || true)
-    else
-        current_shell=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7 || true)
-    fi
+    [[ -z "$zsh_path" ]] && { warn "zsh not found — skipping"; return 0; }
+    current_shell=$(current_login_shell)
     if [[ "${current_shell:-${SHELL:-}}" == "$zsh_path" ]]; then
         sublog "already zsh"
         return 0
     fi
+    choose_login_shell
+    if [[ "$(<"$STATE_DIR/login-shell")" != yes ]]; then
+        sublog "declined (rm $STATE_DIR/login-shell to be asked again)"
+        return 0
+    fi
     if ! grep -qx "$zsh_path" /etc/shells 2>/dev/null; then
         if [[ "$NO_SUDO" == "1" ]]; then
-            sublog "no sudo — $zsh_path not in /etc/shells; ask root to add it before chsh."
+            warn "no sudo — $zsh_path not in /etc/shells; ask root to add it before chsh"
             return 0
         fi
         sublog "Adding $zsh_path to /etc/shells..."
         echo "$zsh_path" | $SUDO tee -a /etc/shells >/dev/null
     fi
-    if confirm "Set login shell to $zsh_path?"; then
-        chsh -s "$zsh_path"
-    fi
+    sublog "chsh -s $zsh_path (may prompt for your password)"
+    chsh -s "$zsh_path"
 }
 
 main() {
     log "myshell stage 2 — $OS"
+    # All prompts live in gather_answers (see the header rule) so the long
+    # package phase runs unattended; answers are recorded under $STATE_DIR.
+    gather_answers
     # Locale first: apt maintainer scripts shell out to perl with
     # LANG=zh_TW.UTF-8 inherited from the caller's env. If that locale
     # hasn't been generated yet, every subsequent apt install prints
@@ -848,13 +1010,15 @@ main() {
     configure_timezone
     setup_pnpm
     install_agents
-    install_opencode
-    install_agy
     configure_tealdeer
     install_fonts
     configure_terminal_profile
     set_login_shell
-    log "Done. Start a new shell to pick up changes."
+    if [[ "$WARNINGS" -gt 0 ]]; then
+        log "Done with $WARNINGS warning(s) — grep output for 'warning:'. Start a new shell to pick up changes."
+    else
+        log "Done. Start a new shell to pick up changes."
+    fi
 }
 
 main "$@"

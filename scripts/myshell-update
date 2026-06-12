@@ -5,63 +5,104 @@ set -euo pipefail
 # Deployed to ~/bin/myshell-update by scripts/install; invoked via the
 # `u` alias. The namespaced name avoids clobbering any personal
 # ~/bin/update the user may already have.
+#
+# Sections are independent and fail soft (`|| warn`): one flaky updater
+# must not abort the rest — this is a convenience sweep, not a transaction.
+# Warnings are counted and reported in the final Done line.
 
-echo "==> Updating system packages..."
+# Output vocabulary — deliberately duplicated byte-identical in ../bootstrap
+# and ./install (this file is deployed standalone to ~/bin, so no sourced
+# lib can reach all three); drift between the copies is a bug.
+WARNINGS=0
+log()    { printf '\n==> %s\n' "$*"; }
+sublog() { printf '    %s\n' "$*"; }
+warn()   { printf 'warning: %s\n' "$*" >&2; WARNINGS=$((WARNINGS+1)); }
+die()    { printf 'error: %s\n' "$*" >&2; exit 1; }
+trap 'rc=$?; printf "error: failed at line %s: %s (exit %s)\n" "$LINENO" "$BASH_COMMAND" "$rc" >&2; exit "$rc"' ERR
+
+# sudo shim — same convention as bootstrap: root needs no prefix; non-root
+# without sudo skips system-level updates (user-level ones still run).
+if [[ $EUID -eq 0 ]]; then
+    SUDO=""
+    NO_SUDO=0
+elif command -v sudo >/dev/null 2>&1; then
+    SUDO=sudo
+    NO_SUDO=0
+else
+    SUDO=""
+    NO_SUDO=1
+fi
 
 if command -v brew &>/dev/null; then
-    brew update
-    brew upgrade
-    brew cleanup
+    log "Updating Homebrew packages..."
+    brew update || warn "brew update failed"
+    brew upgrade || warn "brew upgrade failed"
+    brew cleanup || warn "brew cleanup failed"
 fi
 
 if command -v apt &>/dev/null; then
-    sudo apt update
-    sudo apt upgrade -y
-    sudo apt autoremove -y
+    if [[ "$NO_SUDO" == "1" ]]; then
+        warn "no sudo — skipping apt updates"
+    else
+        log "Updating apt packages..."
+        $SUDO apt update || warn "apt update failed"
+        $SUDO apt upgrade -y || warn "apt upgrade failed"
+        $SUDO apt autoremove -y || warn "apt autoremove failed"
+    fi
 fi
 
 if command -v snap &>/dev/null; then
-    sudo snap refresh
+    if [[ "$NO_SUDO" == "1" ]]; then
+        warn "no sudo — skipping snap refresh"
+    else
+        log "Refreshing snaps..."
+        $SUDO snap refresh || warn "snap refresh failed"
+    fi
 fi
 
-# zinit
-if command -v zinit &>/dev/null; then
-    echo "==> Updating zinit plugins..."
-    zsh -ic 'zinit self-update; zinit update --all'
+# zinit is a zsh *function*, not a binary — `command -v zinit` is always
+# false in bash — so key on its install dir instead.
+ZINIT_HOME="$HOME/.local/share/zinit/zinit.git"
+if [[ -f "$ZINIT_HOME/zinit.zsh" ]]; then
+    log "Updating zinit plugins..."
+    zsh -ic 'zinit self-update; zinit update --all' || warn "zinit update failed"
 fi
 
-# pnpm — self-update, refresh the Node LTS runtime, and update global packages.
+# pnpm — self-update, refresh the Node LTS runtime, and update global
+# packages (Codex lives here; the self-updating agents are below).
 if command -v pnpm &>/dev/null; then
-    echo "==> Updating pnpm..."
-    pnpm self-update || true
-    echo "==> Refreshing Node LTS (pnpm runtime)..."
-    pnpm runtime set node lts -g || true
-    echo "==> Updating pnpm global packages..."
-    pnpm update -g || true
+    log "Updating pnpm, Node LTS, and pnpm global packages..."
+    pnpm self-update || warn "pnpm self-update failed"
+    pnpm runtime set node lts -g || warn "pnpm runtime set node lts failed"
+    pnpm update -g || warn "pnpm update -g failed"
 fi
 
-# Claude Code
+# Claude Code — native install (~/.local/bin), self-updates via its own command.
 if command -v claude &>/dev/null; then
-    echo "==> Upgrading Claude Code..."
-    claude upgrade
+    log "Updating Claude Code..."
+    claude update || warn "Claude Code update failed"
 fi
 
 # OpenCode — standalone binary, self-updates via its own command.
 if command -v opencode &>/dev/null; then
-    echo "==> Upgrading OpenCode..."
-    opencode upgrade || true
+    log "Upgrading OpenCode..."
+    opencode upgrade || warn "OpenCode upgrade failed"
 fi
 
 # Antigravity CLI (agy) — standalone binary, self-updates via its own command.
 if command -v agy &>/dev/null; then
-    echo "==> Updating Antigravity CLI (agy)..."
-    agy update || true
+    log "Updating Antigravity CLI (agy)..."
+    agy update || warn "agy update failed"
 fi
 
 # Claude Code gstack skill — use the skill's own updater (same as /gstack-upgrade).
-if [ -x "$HOME/.claude/skills/gstack/bin/gstack-update-check" ]; then
-    echo "==> Updating Claude gstack skill..."
-    "$HOME/.claude/skills/gstack/bin/gstack-update-check" --force || true
+if [[ -x "$HOME/.claude/skills/gstack/bin/gstack-update-check" ]]; then
+    log "Updating Claude gstack skill..."
+    "$HOME/.claude/skills/gstack/bin/gstack-update-check" --force || warn "gstack skill update failed"
 fi
 
-echo "==> Done."
+if [[ "$WARNINGS" -gt 0 ]]; then
+    log "Done with $WARNINGS warning(s) — grep output for 'warning:'."
+else
+    log "Done."
+fi

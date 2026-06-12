@@ -12,8 +12,15 @@ set -eu
 
 REPO_TARBALL="https://github.com/enstw/myshell/archive/refs/heads/main.tar.gz"
 
-log() { printf '==> %s\n' "$*"; }
-die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+# Output vocabulary — deliberately duplicated byte-identical in
+# scripts/install and scripts/myshell-update (this file runs pre-checkout,
+# so no sourced lib can reach all three); drift between the copies is a bug.
+# warn goes to stderr and is counted (`grep '^warning:'` audits a run).
+WARNINGS=0
+log()    { printf '\n==> %s\n' "$*"; }
+sublog() { printf '    %s\n' "$*"; }
+warn()   { printf 'warning: %s\n' "$*" >&2; WARNINGS=$((WARNINGS+1)); }
+die()    { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 # sudo shim:
 #   - root           -> no prefix needed.
@@ -29,7 +36,7 @@ elif command -v sudo >/dev/null 2>&1; then
     SUDO="sudo"
     NO_SUDO=0
 else
-    log "No sudo and not root — running no-sudo bootstrap (skipping system-level steps)."
+    log "No sudo and not root — running no-sudo bootstrap (skipping system-level steps)"
     SUDO=""
     NO_SUDO=1
 fi
@@ -43,7 +50,12 @@ detect_os() {
             # shellcheck disable=SC1091
             . /etc/os-release
             case "${ID:-}" in
-                ubuntu|debian) echo ubuntu ;;
+                ubuntu) echo ubuntu ;;
+                debian)
+                    # warn goes to stderr — stdout is captured by the caller.
+                    warn "Debian detected — proceeding as Ubuntu (packages only validated on Ubuntu 22.04+)"
+                    echo ubuntu
+                    ;;
                 *) die "unsupported Linux distribution: ${ID:-unknown}" ;;
             esac
             ;;
@@ -60,7 +72,7 @@ brew_prefix() {
 }
 
 install_macos() {
-    log "macOS detected."
+    log "macOS detected"
     # Homebrew refuses to run as root ("Don't run this as root!") — fail
     # fast with our own message instead of dying inside its installer.
     [ "$(id -u)" -ne 0 ] || die "do not run as root on macOS — Homebrew refuses root installs"
@@ -77,7 +89,11 @@ install_macos() {
     fi
 
     if [ -z "$brew_bin" ]; then
-        log "Installing Homebrew — may prompt for password and open a Command Line Tools dialog."
+        # The Homebrew installer needs sudo, so the no-sudo story ("reduced
+        # to user-level config") only holds on macOS when brew already
+        # exists — fail fast instead of dying inside Homebrew's installer.
+        [ "$NO_SUDO" != "1" ] || die "Homebrew is not installed and sudo is unavailable — install Homebrew first or run as an admin user"
+        sublog "Installing Homebrew (may prompt for password and open a Command Line Tools dialog)..."
         # NONINTERACTIVE=1 skips the installer's "Press RETURN" read (which
         # would eat the script stream in curl|sh mode), but it also makes the
         # installer use `sudo -n`, which aborts instead of prompting. Pre-warm
@@ -88,25 +104,29 @@ install_macos() {
             "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
         brew_bin="$(brew_prefix)/bin/brew"
     else
-        log "Homebrew already installed ($brew_bin) — skipping."
+        sublog "Homebrew already installed ($brew_bin) — skipping"
     fi
     eval "$("$brew_bin" shellenv)"
     if ! brew list --formula bash >/dev/null 2>&1; then
-        log "Installing bash 5..."
+        sublog "Installing bash 5..."
         brew install bash
     else
-        log "bash 5 already installed — skipping."
+        sublog "bash 5 already installed — skipping"
     fi
     BASH5="$(brew --prefix)/bin/bash"
 }
 
 install_ubuntu() {
-    log "Ubuntu detected."
+    log "Ubuntu detected"
     if [ "$NO_SUDO" = "1" ]; then
-        log "No sudo — skipping apt-get update."
+        warn "no sudo — skipping apt-get update"
     else
-        log "Refreshing apt index${SUDO:+ (may prompt for sudo password)}..."
+        sublog "Refreshing apt index${SUDO:+ (may prompt for sudo password)}..."
         $SUDO apt-get update
+        # Tell stage 2 the index is fresh so it doesn't update again; a
+        # standalone stage-2 run (without this marker) updates for itself.
+        MYSHELL_APT_UPDATED=1
+        export MYSHELL_APT_UPDATED
     fi
     # Ubuntu 20.04+ ships bash 5 by default.
     BASH5=/bin/bash
@@ -135,7 +155,11 @@ main() {
         tmp=$(mktemp -d)
         # Trap (not exec) handoff: we need the tmp dir to survive stage 2,
         # and to be removed whether stage 2 succeeds, fails, or is Ctrl-C'd.
-        trap 'rm -rf "$tmp"' EXIT INT TERM
+        # INT/TERM exit explicitly (with the conventional status) so cleanup
+        # doesn't depend on set -e noticing the interrupted command.
+        trap 'rm -rf "$tmp"' EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
         curl -fsSL "$REPO_TARBALL" | tar xz -C "$tmp"
         stage2="$tmp/myshell-main/scripts/install"
         [ -f "$stage2" ] || die "stage 2 installer missing after download: $stage2"

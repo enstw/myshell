@@ -18,10 +18,12 @@ From a checkout (uses local `scripts/install`, good for iterating):
 
 Two stages:
 
-1. `bootstrap` — POSIX-sh. Installs Homebrew + bash 5 on macOS (skips either if already present), or refreshes apt on Ubuntu, then `exec`s stage 2.
-1. `scripts/install` — bash 5. Installs apps (including standalone `pnpm`, which also provisions the Node LTS runtime), writes `~/.zshenv` + `~/.zsh/*.zsh` + `~/.zshrc`, deploys `scripts/myshell-update` to `~/bin/myshell-update` (aliased to `u`), configures locale/timezone/pnpm/tealdeer, prompts which AI agents to install (Claude Code and Codex via pnpm; OpenCode and Antigravity CLI `agy` opt-in as standalone binaries), optionally installs fonts, offers to `chsh` to zsh. Optional upstream installers and agent installs fail soft so a transient network/TLS issue does not abort the whole bootstrap.
+1. `bootstrap` — POSIX-sh. Installs Homebrew + bash 5 on macOS (skips either if already present), or refreshes apt on Ubuntu, then runs stage 2 (no `exec` — bootstrap's cleanup trap must outlive it).
+1. `scripts/install` — bash 5. Asks every question up front — git identity, which AI agents, fonts, login shell — and records the answers in `~/.local/state/myshell/` so re-runs don't re-ask (delete a file there to be asked again). Then it runs unattended: installs apps (including standalone `pnpm`, which also provisions the Node LTS runtime), writes `~/.zshenv` + `~/.zsh/*.zsh` + `~/.zshrc`, deploys `scripts/myshell-update` to `~/bin/myshell-update` (aliased to `u`), configures locale/timezone/pnpm/tealdeer, installs the chosen AI agents (Codex via pnpm; Claude Code, OpenCode, and Antigravity CLI `agy` as standalone self-updating binaries), optionally installs fonts, and finishes with `chsh` to zsh (which may prompt for your password). Optional upstream installers and agent installs fail soft so a transient network/TLS issue does not abort the whole bootstrap.
 
-This machine is **pnpm-only**: pnpm replaces npm (installed standalone via `get.pnpm.io`, supplies Node via `pnpm env`), and `npx` is aliased to `pnpm dlx`. The bundled `npm` is left unused and guarded behind a shell function.
+This machine is **pnpm-only**: pnpm replaces npm (installed standalone via `get.pnpm.io`, supplies Node via `pnpm runtime`), and `npx` is aliased to `pnpm dlx`. The bundled `npm` is left unused and guarded behind a shell function.
+
+The generated files (`~/.zshenv`, `~/.zshrc`, and the `~/.zsh/*.zsh` files the installer writes) are rewritten on every run — don't hand-edit them. Personal config goes in your own `~/.zsh/<name>.zsh`: everything in that directory is sourced, and the installer only ever rewrites its own files.
 
 Read the header banner at the top of `scripts/install` for the cross-cutting rules (Python-via-uv-only, Node/pnpm-only, locale, timezone, AI agent install pattern, zsh file layout).
 
