@@ -191,10 +191,13 @@ choose_agents() {
 
 choose_fonts() {
     [[ -f "$STATE_DIR/fonts" ]] && return 0
+    # Font already on disk: skip WITHOUT recording — the user never answered,
+    # and the state files record decisions, not inferred state. If the font
+    # is later deleted deliberately, the next run asks again instead of
+    # silently re-installing on a fabricated "yes".
+    [[ -f "$(ens_fonts_dir)/ENSFont.ttc" ]] && return 0
     local answer=no
-    if [[ -f "$(ens_fonts_dir)/ENSFont.ttc" ]]; then
-        answer=yes # already installed — never ask about it again
-    elif confirm "Install ENS fonts from github.com/enstw/font?"; then
+    if confirm "Install ENS fonts from github.com/enstw/font?"; then
         answer=yes
     fi
     mkdir -p "$STATE_DIR"
@@ -203,11 +206,13 @@ choose_fonts() {
 
 choose_login_shell() {
     [[ -f "$STATE_DIR/login-shell" ]] && return 0
+    # Already on zsh: skip WITHOUT recording — the user never answered (same
+    # rationale as choose_fonts). If they later switch away deliberately,
+    # the next run asks instead of silently chsh-ing them back.
     local current answer=no
     current=$(current_login_shell)
-    if [[ "${current##*/}" == zsh ]]; then
-        answer=yes # already on zsh — don't ask about a switch that happened
-    elif confirm "Set login shell to zsh?"; then
+    [[ "${current##*/}" == zsh ]] && return 0
+    if confirm "Set login shell to zsh?"; then
         answer=yes
     fi
     mkdir -p "$STATE_DIR"
@@ -971,8 +976,12 @@ set_login_shell() {
     zsh_path=$(command -v zsh || true)
     [[ -z "$zsh_path" ]] && { warn "zsh not found — skipping"; return 0; }
     current_shell=$(current_login_shell)
-    if [[ "${current_shell:-${SHELL:-}}" == "$zsh_path" ]]; then
-        sublog "already zsh"
+    # Basename match, not exact path: /bin/zsh vs the brew zsh is still zsh —
+    # don't churn the passwd entry (or re-ask) over a path difference. This
+    # also guarantees the choice file exists after choose_login_shell below
+    # (its only no-record path is the already-zsh one handled here).
+    if [[ "${current_shell:-${SHELL:-}}" == */zsh || "${current_shell:-${SHELL:-}}" == zsh ]]; then
+        sublog "already zsh (${current_shell:-$SHELL})"
         return 0
     fi
     choose_login_shell
