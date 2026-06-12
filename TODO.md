@@ -67,14 +67,15 @@ CI (GitHub Actions) runs `scripts/check` plus two headless container round-trips
    docker run --rm -it -v "$PWD":/myshell ubuntu:24.04 bash -c \
      'apt-get update && apt-get install -y curl git && cp -r /myshell /root/myshell && /root/myshell/bootstrap'
    ```
+1. Headless variant (what CI runs): `scripts/ci-roundtrip` inside the container — seeds the recorded answers, runs bootstrap twice, asserts artifacts + zero warnings. The two commands above stay the *interactive* round-trip (run them from macOS Docker Desktop too).
 1. Fresh Mac: harder to sandbox; test on a spare account or VM.
 1. To iterate fast on stage 2 only: run `scripts/install` directly under an existing bash 5.
 
 ## Where to pick up
 
-Decide whether to:
+(2026-06-12 handoff)
 
-- (a) Smoke-test what's there on a container before adding more, or
-- (b) Keep layering in the deferred items, then test once.
-
-Leaning (a) — container round-trip will expose path/sudo/apt issues faster than reading.
+1. **Watch the first CI run** (triggered by this push — `.github/workflows/ci.yml`). It will answer the two open unknowns nobody has verified on a real box: whether `pnpm runtime set node lts -g` is the correct pnpm 11 subcommand, and whether `yes | unminimize` completes cleanly in a minimized `ubuntu:24.04` container. Both are asserted by `scripts/ci-roundtrip` (zero-warning gate), so a red job pinpoints the step.
+1. **Owner (jz): run the interactive docker round-trips on macOS Docker Desktop** — the two commands in "How to resume / test" above. CI covers the headless path; the interactive prompt phase (gather_answers on a real tty: git identity, agent menu, fonts, chsh) is what these exercise.
+1. After both are green, the remaining untested leg is a fresh bare Mac (brew path, Terminal profile, fonts).
+1. Then resume the deferred items (yt-dlp, optional apps, command-not-found) on a tested base — each new step follows the contract in the `scripts/install` header.
