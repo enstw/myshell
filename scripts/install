@@ -17,6 +17,8 @@ set -Eeuo pipefail
 #   python -m venv, pyenv, or poetry. Translate upstream `pip install X` or
 #   `pipx install X` to `uv tool install X` or a `uv venv` + `uv pip install`.
 #   Machines get wedged by pipx + `pip --break-system-packages`; uv is the fix.
+#   Enforced, not just documented: `purge_non_uv_python` actively removes
+#   brew/apt pipx/poetry/pyenv and the per-user dirs their installers drop.
 #
 # - Locale: LANG=zh_TW.UTF-8, LANGUAGE=zh_TW:en. Never bare `zh` (resolves to
 #   Simplified on some systems). Never set LC_ALL (it overrides per-category
@@ -44,6 +46,9 @@ set -Eeuo pipefail
 #   and pnpm itself provisions the Node runtime (`pnpm runtime set node lts -g`).
 #   There is no separate `node`/`npm` install: npm/npx ship inside pnpm's Node
 #   but are not used. Global bins live in $PNPM_HOME; PATH pickup is in ~/.zshenv.
+#   Enforced, not just documented: `purge_non_pnpm_node` actively removes
+#   brew/apt node/npm/yarn and version managers (nvm/fnm/volta/asdf-node), and
+#   warns on lingering npm-globals outside pnpm's prefix.
 #
 # - bun: installed via its own bun.sh installer into ~/.bun — a peer runtime
 #   required by the gstack skill, NOT part of the pnpm-only policy. It doesn't
@@ -402,6 +407,131 @@ install_zinit() {
     sublog "Installing zinit to $zinit_home..."
     mkdir -p "$(dirname "$zinit_home")"
     git clone --depth 1 https://github.com/zdharma-continuum/zinit.git "$zinit_home"
+}
+
+# Policy enforcement: actively remove tools that compete with uv (Python) or
+# pnpm (Node). The header rules already say "never pip/pipx/poetry/pyenv" and
+# "pnpm-only", so a stray version manager or apt-node is a bug, not a choice —
+# leaving them around lets PATH order silently pick the wrong binary. Both
+# functions are fail-soft and check-first: a clean machine prints "nothing to
+# purge" and moves on; a brew/apt dependency conflict warns instead of aborting.
+purge_conflicts() {
+    log "Purging non-sanctioned Python/Node tools..."
+    purge_non_uv_python
+    purge_non_pnpm_node
+}
+
+purge_non_uv_python() {
+    # System python3 (apt/brew) is left alone — OS tools depend on it. Targets
+    # are user-managed shells around it: pipx, poetry, pyenv (brew/apt and the
+    # per-user dirs their installers drop).
+    local removed=() f p d
+    if [[ "$OS" == macos ]]; then
+        for f in pipx poetry pyenv; do
+            brew list --formula "$f" >/dev/null 2>&1 || continue
+            if brew uninstall "$f" >/dev/null 2>&1; then
+                removed+=("brew:$f")
+            else
+                warn "brew uninstall $f failed (dependents?)"
+            fi
+        done
+    elif [[ "$NO_SUDO" != 1 ]]; then
+        for p in pipx python3-poetry pyenv; do
+            dpkg -s "$p" >/dev/null 2>&1 || continue
+            if $SUDO apt-get purge -y "$p" >/dev/null 2>&1; then
+                removed+=("apt:$p")
+            else
+                warn "apt purge $p failed"
+            fi
+        done
+    fi
+    for d in "$HOME/.pyenv" "$HOME/.local/pipx" \
+             "$HOME/.local/share/pypoetry" "$HOME/.cache/pypoetry"; do
+        [[ -e "$d" ]] || continue
+        if rm -rf "$d"; then
+            removed+=("${d/#$HOME/~}")
+        else
+            warn "rm $d failed"
+        fi
+    done
+    # poetry's official installer drops a shim here that survives the dirs above.
+    if [[ -e "$HOME/.local/bin/poetry" ]]; then
+        rm -f "$HOME/.local/bin/poetry" \
+            && removed+=("~/.local/bin/poetry") \
+            || warn "rm ~/.local/bin/poetry failed"
+    fi
+    if [[ ${#removed[@]} -eq 0 ]]; then
+        sublog "Python: nothing to purge (uv-only)"
+    else
+        sublog "Python: removed ${removed[*]}"
+    fi
+}
+
+purge_non_pnpm_node() {
+    # pnpm provisions its own Node and $PNPM_HOME/bin precedes other dirs in
+    # PATH — but a brew/apt `node` still wins for non-shell consumers (cron,
+    # systemd, GUI launchers), and `nvm`/`fnm` shells override PATH from
+    # ~/.zshrc anyway. Strip them all so the pnpm runtime is the only Node.
+    local removed=() f p d
+    if [[ "$OS" == macos ]]; then
+        # Sweep the versioned node@X family too — past `brew install node@20`
+        # etc. are common leftovers. The standalone pnpm install_pnpm already
+        # handles brew pnpm, so it isn't repeated here.
+        for f in node node@lts node@20 node@22 node@24 npm yarn fnm volta; do
+            brew list --formula "$f" >/dev/null 2>&1 || continue
+            if brew uninstall "$f" >/dev/null 2>&1; then
+                removed+=("brew:$f")
+            else
+                warn "brew uninstall $f failed (dependents?)"
+            fi
+        done
+    elif [[ "$NO_SUDO" != 1 ]]; then
+        for p in nodejs npm yarn yarnpkg fnm; do
+            dpkg -s "$p" >/dev/null 2>&1 || continue
+            if $SUDO apt-get purge -y "$p" >/dev/null 2>&1; then
+                removed+=("apt:$p")
+            else
+                warn "apt purge $p failed"
+            fi
+        done
+    fi
+    for d in "$HOME/.nvm" "$HOME/.fnm" "$HOME/.volta"; do
+        [[ -e "$d" ]] || continue
+        if rm -rf "$d"; then
+            removed+=("${d/#$HOME/~}")
+        else
+            warn "rm $d failed"
+        fi
+    done
+    # asdf node plugin only — the rest of asdf may host other languages the
+    # user wants. Remove the plugin definition, installed versions, and shim.
+    if [[ -d "$HOME/.asdf/plugins/nodejs" ]]; then
+        if rm -rf "$HOME/.asdf/plugins/nodejs" \
+                  "$HOME/.asdf/installs/nodejs" \
+                  "$HOME/.asdf/shims/node" 2>/dev/null; then
+            removed+=("asdf:nodejs")
+        else
+            warn "rm asdf nodejs plugin failed"
+        fi
+    fi
+    # npm globals outside pnpm's prefix can be load-bearing (the user may have
+    # installed CLIs there years ago) — warn rather than delete. Common roots:
+    # brew-node's /usr/local & /opt/homebrew, and the legacy ~/.npm-global.
+    local g
+    for g in /usr/local/lib/node_modules /opt/homebrew/lib/node_modules \
+             "$HOME/.npm-global"; do
+        [[ -d "$g" ]] || continue
+        # Anything besides hidden bookkeeping dirs?
+        if find "$g" -mindepth 1 -maxdepth 1 -not -name '.*' 2>/dev/null \
+             | grep -q .; then
+            warn "npm globals linger in $g — review and remove if unused"
+        fi
+    done
+    if [[ ${#removed[@]} -eq 0 ]]; then
+        sublog "Node: nothing to purge (pnpm-only)"
+    else
+        sublog "Node: removed ${removed[*]}"
+    fi
 }
 deploy_dotfiles() {
     log "Writing zsh dotfiles..."
@@ -1004,6 +1134,7 @@ main() {
     # any package work silences the warnings.
     configure_locale
     install_apps
+    purge_conflicts
     deploy_dotfiles
     deploy_scripts
     configure_git
