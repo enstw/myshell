@@ -47,8 +47,9 @@ set -Eeuo pipefail
 #   There is no separate `node`/`npm` install: npm/npx ship inside pnpm's Node
 #   but are not used. Global bins live in $PNPM_HOME; PATH pickup is in ~/.zshenv.
 #   Enforced, not just documented: `purge_non_pnpm_node` actively removes
-#   brew/apt node/npm/yarn and version managers (nvm/fnm/volta/asdf-node), and
-#   warns on lingering npm-globals outside pnpm's prefix.
+#   brew/apt node/npm/yarn and version managers (nvm/fnm/volta/asdf-node),
+#   sweeps stale myshell-managed agent packages and orphaned npm/corepack from
+#   npm-global prefixes, and warns on any other lingering npm-globals.
 #
 # - bun: installed via its own bun.sh installer into ~/.bun — a peer runtime
 #   required by the gstack skill, NOT part of the pnpm-only policy. It doesn't
@@ -155,12 +156,33 @@ confirm() {
     [[ "$reply" =~ ^[Yy] ]]
 }
 
+# True when a system-level (sudo) step will actually run this round, so a quiet
+# re-run with nothing to do never prompts for a password. Mirrors the guards in
+# configure_timezone / set_login_shell so the prediction can't drift into a
+# surprise mid-run prompt: apt always needs root; on macOS only a timezone
+# change or a missing /etc/shells entry do (brew installs need no sudo).
+sudo_work_pending() {
+    [[ -n "$SUDO" ]] || return 1
+    [[ "$OS" == ubuntu ]] && return 0
+    local tz zsh_path
+    tz=$(readlink /etc/localtime 2>/dev/null || true)
+    [[ "${tz#*/zoneinfo/}" != Asia/Taipei ]] && return 0
+    zsh_path=$(command -v zsh || true)
+    [[ -n "$zsh_path" ]] && ! grep -qx "$zsh_path" /etc/shells 2>/dev/null && return 0
+    return 1
+}
+
 # Pre-warm sudo and keep its timestamp fresh for the whole run, so the
 # password prompt happens up front (with the other questions) instead of at
-# a random later sudo step after a long brew/apt phase. The keepalive loop
-# watches the script's PID and exits on its own within a minute of the end.
+# a random later sudo step after a long brew/apt phase. Skipped entirely when
+# no sudo-level work is pending, so an already-configured re-run never prompts.
+# The keepalive loop watches the script's PID and exits within a minute of the end.
 warm_sudo() {
     [[ -n "$SUDO" ]] || return 0
+    if ! sudo_work_pending; then
+        sublog "no system-level changes pending — skipping sudo pre-auth"
+        return 0
+    fi
     $SUDO -v
     ( while kill -0 "$$" 2>/dev/null; do $SUDO -n -v 2>/dev/null || true; sleep 60; done ) &
 }
@@ -514,14 +536,54 @@ purge_non_pnpm_node() {
             warn "rm asdf nodejs plugin failed"
         fi
     fi
-    # npm globals outside pnpm's prefix can be load-bearing (the user may have
-    # installed CLIs there years ago) — warn rather than delete. Common roots:
-    # brew-node's /usr/local & /opt/homebrew, and the legacy ~/.npm-global.
-    local g
-    for g in /usr/local/lib/node_modules /opt/homebrew/lib/node_modules \
-             "$HOME/.npm-global"; do
+    # npm globals outside pnpm's prefix fall into three buckets:
+    #   1. Agent packages myshell used to drop under an npm global prefix but
+    #      now manages elsewhere — Claude Code and agy are native, Codex is
+    #      pnpm, and the Gemini CLI is retired (agy replaced it). Ours to remove
+    #      wherever they linger; their bin shims go when ~/.npm-global is nuked.
+    #   2. The node toolchain itself (npm/npx/corepack) orphaned in a brew root
+    #      with no `node` formula owning it — pure cruft under pnpm-only.
+    #   3. Anything else — possibly load-bearing CLIs the user installed years
+    #      ago. Warn, never delete.
+    local g root pkg
+    local stale_pkgs=(@anthropic-ai/claude-code @openai/codex @google/gemini-cli)
+    local brew_node_gone=0
+    [[ "$OS" == macos ]] && ! brew list --formula node >/dev/null 2>&1 && brew_node_gone=1
+    for root in /usr/local /opt/homebrew "$HOME/.npm-global"; do
+        [[ -d "$root/lib/node_modules" ]] || continue
+        for pkg in "${stale_pkgs[@]}"; do
+            [[ -e "$root/lib/node_modules/$pkg" ]] || continue
+            rm -rf "$root/lib/node_modules/$pkg" \
+                && removed+=("npm:$pkg") \
+                || warn "rm $root/lib/node_modules/$pkg failed"
+        done
+        # Orphaned toolchain only in brew roots, and only when no brew node owns it.
+        if [[ "$brew_node_gone" == 1 && "$root" != "$HOME/.npm-global" ]]; then
+            for pkg in npm npx corepack; do
+                [[ -e "$root/lib/node_modules/$pkg" ]] || continue
+                rm -rf "$root/lib/node_modules/$pkg" \
+                    && removed+=("npm:$pkg ($root)") \
+                    || warn "rm $root/lib/node_modules/$pkg failed"
+            done
+        fi
+    done
+    # The legacy ~/.npm-global is entirely ours/cruft: if nothing real remains
+    # under it, remove the whole tree (its bin/ holds only dangling shims now).
+    # Prune empty @scope dirs left by the removals (and pre-existing orphans like
+    # an emptied @google) first, so the leftovers check sees only real packages.
+    if [[ -d "$HOME/.npm-global" ]]; then
+        find "$HOME/.npm-global/lib/node_modules" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+        if find "$HOME/.npm-global/lib/node_modules" -mindepth 1 -maxdepth 1 \
+             -not -name '.*' 2>/dev/null | grep -q .; then
+            warn "npm globals linger in ~/.npm-global — review and remove if unused"
+        else
+            rm -rf "$HOME/.npm-global" && removed+=("~/.npm-global")
+        fi
+    fi
+    # Brew/usr roots are shared with Homebrew: warn on genuine leftovers, never
+    # delete (a stray link there could be load-bearing).
+    for g in /usr/local/lib/node_modules /opt/homebrew/lib/node_modules; do
         [[ -d "$g" ]] || continue
-        # Anything besides hidden bookkeeping dirs?
         if find "$g" -mindepth 1 -maxdepth 1 -not -name '.*' 2>/dev/null \
              | grep -q .; then
             warn "npm globals linger in $g — review and remove if unused"
@@ -796,7 +858,11 @@ configure_timezone() {
     log "Setting timezone to Asia/Taipei..."
     local target=Asia/Taipei current
     if [[ "$OS" == macos ]]; then
-        current=$($SUDO systemsetup -gettimezone 2>/dev/null | awk -F': ' '{print $2}' || true)
+        # Read the zone without sudo (systemsetup -gettimezone needs admin, which
+        # would make even an already-correct box prompt). /etc/localtime is a
+        # symlink into .../zoneinfo/<Area>/<City>.
+        current=$(readlink /etc/localtime 2>/dev/null || true)
+        current="${current#*/zoneinfo/}"
         if [[ "$current" == "$target" ]]; then
             sublog "already $target"
             return 0
