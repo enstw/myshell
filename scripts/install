@@ -27,6 +27,8 @@ set -Eeuo pipefail
 #   python -m venv, pyenv, or poetry. Translate upstream `pip install X` or
 #   `pipx install X` to `uv tool install X` or a `uv venv` + `uv pip install`.
 #   Machines get wedged by pipx + `pip --break-system-packages`; uv is the fix.
+#   Enforced, not just documented: `purge_non_uv_python` actively removes
+#   brew/apt pipx/poetry/pyenv and the per-user dirs their installers drop.
 #
 # - Locale: LANG=zh_TW.UTF-8, LANGUAGE=zh_TW:en. Never bare `zh` (resolves to
 #   Simplified on some systems). Never set LC_ALL (it overrides per-category
@@ -54,6 +56,10 @@ set -Eeuo pipefail
 #   and pnpm itself provisions the Node runtime (`pnpm runtime set node lts -g`).
 #   There is no separate `node`/`npm` install: npm/npx ship inside pnpm's Node
 #   but are not used. Global bins live in $PNPM_HOME; PATH pickup is in ~/.zshenv.
+#   Enforced, not just documented: `purge_non_pnpm_node` actively removes
+#   brew/apt node/npm/yarn and version managers (nvm/fnm/volta/asdf-node),
+#   sweeps stale myshell-managed agent packages and orphaned npm/corepack from
+#   npm-global prefixes, and warns on any other lingering npm-globals.
 #
 # - bun: installed via its own bun.sh installer into ~/.bun — a peer runtime
 #   required by the gstack skill, NOT part of the pnpm-only policy. It doesn't
@@ -160,12 +166,33 @@ confirm() {
     [[ "$reply" =~ ^[Yy] ]]
 }
 
+# True when a system-level (sudo) step will actually run this round, so a quiet
+# re-run with nothing to do never prompts for a password. Mirrors the guards in
+# configure_timezone / set_login_shell so the prediction can't drift into a
+# surprise mid-run prompt: apt always needs root; on macOS only a timezone
+# change or a missing /etc/shells entry do (brew installs need no sudo).
+sudo_work_pending() {
+    [[ -n "$SUDO" ]] || return 1
+    [[ "$OS" == ubuntu ]] && return 0
+    local tz zsh_path
+    tz=$(readlink /etc/localtime 2>/dev/null || true)
+    [[ "${tz#*/zoneinfo/}" != Asia/Taipei ]] && return 0
+    zsh_path=$(command -v zsh || true)
+    [[ -n "$zsh_path" ]] && ! grep -qx "$zsh_path" /etc/shells 2>/dev/null && return 0
+    return 1
+}
+
 # Pre-warm sudo and keep its timestamp fresh for the whole run, so the
 # password prompt happens up front (with the other questions) instead of at
-# a random later sudo step after a long brew/apt phase. The keepalive loop
-# watches the script's PID and exits on its own within a minute of the end.
+# a random later sudo step after a long brew/apt phase. Skipped entirely when
+# no sudo-level work is pending, so an already-configured re-run never prompts.
+# The keepalive loop watches the script's PID and exits within a minute of the end.
 warm_sudo() {
     [[ -n "$SUDO" ]] || return 0
+    if ! sudo_work_pending; then
+        sublog "no system-level changes pending — skipping sudo pre-auth"
+        return 0
+    fi
     $SUDO -v
     ( while kill -0 "$$" 2>/dev/null; do $SUDO -n -v 2>/dev/null || true; sleep 60; done ) &
 }
@@ -457,6 +484,171 @@ install_zinit() {
     mkdir -p "$(dirname "$zinit_home")"
     git clone --depth 1 https://github.com/zdharma-continuum/zinit.git "$zinit_home"
 }
+
+# Policy enforcement: actively remove tools that compete with uv (Python) or
+# pnpm (Node). The header rules already say "never pip/pipx/poetry/pyenv" and
+# "pnpm-only", so a stray version manager or apt-node is a bug, not a choice —
+# leaving them around lets PATH order silently pick the wrong binary. Both
+# functions are fail-soft and check-first: a clean machine prints "nothing to
+# purge" and moves on; a brew/apt dependency conflict warns instead of aborting.
+purge_conflicts() {
+    log "Purging non-sanctioned Python/Node tools..."
+    purge_non_uv_python
+    purge_non_pnpm_node
+}
+
+purge_non_uv_python() {
+    # System python3 (apt/brew) is left alone — OS tools depend on it. Targets
+    # are user-managed shells around it: pipx, poetry, pyenv (brew/apt and the
+    # per-user dirs their installers drop).
+    local removed=() f p d
+    if [[ "$OS" == macos ]]; then
+        for f in pipx poetry pyenv; do
+            brew list --formula "$f" >/dev/null 2>&1 || continue
+            if brew uninstall "$f" >/dev/null 2>&1; then
+                removed+=("brew:$f")
+            else
+                warn "brew uninstall $f failed (dependents?)"
+            fi
+        done
+    elif [[ "$NO_SUDO" != 1 ]]; then
+        for p in pipx python3-poetry pyenv; do
+            dpkg -s "$p" >/dev/null 2>&1 || continue
+            if $SUDO apt-get purge -y "$p" >/dev/null 2>&1; then
+                removed+=("apt:$p")
+            else
+                warn "apt purge $p failed"
+            fi
+        done
+    fi
+    for d in "$HOME/.pyenv" "$HOME/.local/pipx" \
+             "$HOME/.local/share/pypoetry" "$HOME/.cache/pypoetry"; do
+        [[ -e "$d" ]] || continue
+        if rm -rf "$d"; then
+            removed+=("${d/#$HOME/~}")
+        else
+            warn "rm $d failed"
+        fi
+    done
+    # poetry's official installer drops a shim here that survives the dirs above.
+    if [[ -e "$HOME/.local/bin/poetry" ]]; then
+        rm -f "$HOME/.local/bin/poetry" \
+            && removed+=("~/.local/bin/poetry") \
+            || warn "rm ~/.local/bin/poetry failed"
+    fi
+    if [[ ${#removed[@]} -eq 0 ]]; then
+        sublog "Python: nothing to purge (uv-only)"
+    else
+        sublog "Python: removed ${removed[*]}"
+    fi
+}
+
+purge_non_pnpm_node() {
+    # pnpm provisions its own Node and $PNPM_HOME/bin precedes other dirs in
+    # PATH — but a brew/apt `node` still wins for non-shell consumers (cron,
+    # systemd, GUI launchers), and `nvm`/`fnm` shells override PATH from
+    # ~/.zshrc anyway. Strip them all so the pnpm runtime is the only Node.
+    local removed=() f p d
+    if [[ "$OS" == macos ]]; then
+        # Sweep the versioned node@X family too — past `brew install node@20`
+        # etc. are common leftovers. The standalone pnpm install_pnpm already
+        # handles brew pnpm, so it isn't repeated here.
+        for f in node node@lts node@20 node@22 node@24 npm yarn fnm volta; do
+            brew list --formula "$f" >/dev/null 2>&1 || continue
+            if brew uninstall "$f" >/dev/null 2>&1; then
+                removed+=("brew:$f")
+            else
+                warn "brew uninstall $f failed (dependents?)"
+            fi
+        done
+    elif [[ "$NO_SUDO" != 1 ]]; then
+        for p in nodejs npm yarn yarnpkg fnm; do
+            dpkg -s "$p" >/dev/null 2>&1 || continue
+            if $SUDO apt-get purge -y "$p" >/dev/null 2>&1; then
+                removed+=("apt:$p")
+            else
+                warn "apt purge $p failed"
+            fi
+        done
+    fi
+    for d in "$HOME/.nvm" "$HOME/.fnm" "$HOME/.volta"; do
+        [[ -e "$d" ]] || continue
+        if rm -rf "$d"; then
+            removed+=("${d/#$HOME/~}")
+        else
+            warn "rm $d failed"
+        fi
+    done
+    # asdf node plugin only — the rest of asdf may host other languages the
+    # user wants. Remove the plugin definition, installed versions, and shim.
+    if [[ -d "$HOME/.asdf/plugins/nodejs" ]]; then
+        if rm -rf "$HOME/.asdf/plugins/nodejs" \
+                  "$HOME/.asdf/installs/nodejs" \
+                  "$HOME/.asdf/shims/node" 2>/dev/null; then
+            removed+=("asdf:nodejs")
+        else
+            warn "rm asdf nodejs plugin failed"
+        fi
+    fi
+    # npm globals outside pnpm's prefix fall into three buckets:
+    #   1. Agent packages myshell used to drop under an npm global prefix but
+    #      now manages elsewhere — Claude Code and agy are native, Codex is
+    #      pnpm, and the Gemini CLI is retired (agy replaced it). Ours to remove
+    #      wherever they linger; their bin shims go when ~/.npm-global is nuked.
+    #   2. The node toolchain itself (npm/npx/corepack) orphaned in a brew root
+    #      with no `node` formula owning it — pure cruft under pnpm-only.
+    #   3. Anything else — possibly load-bearing CLIs the user installed years
+    #      ago. Warn, never delete.
+    local g root pkg
+    local stale_pkgs=(@anthropic-ai/claude-code @openai/codex @google/gemini-cli)
+    local brew_node_gone=0
+    [[ "$OS" == macos ]] && ! brew list --formula node >/dev/null 2>&1 && brew_node_gone=1
+    for root in /usr/local /opt/homebrew "$HOME/.npm-global"; do
+        [[ -d "$root/lib/node_modules" ]] || continue
+        for pkg in "${stale_pkgs[@]}"; do
+            [[ -e "$root/lib/node_modules/$pkg" ]] || continue
+            rm -rf "$root/lib/node_modules/$pkg" \
+                && removed+=("npm:$pkg") \
+                || warn "rm $root/lib/node_modules/$pkg failed"
+        done
+        # Orphaned toolchain only in brew roots, and only when no brew node owns it.
+        if [[ "$brew_node_gone" == 1 && "$root" != "$HOME/.npm-global" ]]; then
+            for pkg in npm npx corepack; do
+                [[ -e "$root/lib/node_modules/$pkg" ]] || continue
+                rm -rf "$root/lib/node_modules/$pkg" \
+                    && removed+=("npm:$pkg ($root)") \
+                    || warn "rm $root/lib/node_modules/$pkg failed"
+            done
+        fi
+    done
+    # The legacy ~/.npm-global is entirely ours/cruft: if nothing real remains
+    # under it, remove the whole tree (its bin/ holds only dangling shims now).
+    # Prune empty @scope dirs left by the removals (and pre-existing orphans like
+    # an emptied @google) first, so the leftovers check sees only real packages.
+    if [[ -d "$HOME/.npm-global" ]]; then
+        find "$HOME/.npm-global/lib/node_modules" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+        if find "$HOME/.npm-global/lib/node_modules" -mindepth 1 -maxdepth 1 \
+             -not -name '.*' 2>/dev/null | grep -q .; then
+            warn "npm globals linger in ~/.npm-global — review and remove if unused"
+        else
+            rm -rf "$HOME/.npm-global" && removed+=("~/.npm-global")
+        fi
+    fi
+    # Brew/usr roots are shared with Homebrew: warn on genuine leftovers, never
+    # delete (a stray link there could be load-bearing).
+    for g in /usr/local/lib/node_modules /opt/homebrew/lib/node_modules; do
+        [[ -d "$g" ]] || continue
+        if find "$g" -mindepth 1 -maxdepth 1 -not -name '.*' 2>/dev/null \
+             | grep -q .; then
+            warn "npm globals linger in $g — review and remove if unused"
+        fi
+    done
+    if [[ ${#removed[@]} -eq 0 ]]; then
+        sublog "Node: nothing to purge (pnpm-only)"
+    else
+        sublog "Node: removed ${removed[*]}"
+    fi
+}
 deploy_dotfiles() {
     log "Writing zsh dotfiles..."
     mkdir -p "$HOME/.zsh"
@@ -476,6 +668,23 @@ if [[ -x /opt/homebrew/bin/brew ]]; then
 elif [[ -x /usr/local/bin/brew ]]; then
     eval "$(/usr/local/bin/brew shellenv)"
 fi
+
+# `brew shellenv` prepends its completions dir to fpath AND marks FPATH exported
+# (`export FPATH;`). An exported FPATH is inherited by child shells and frozen
+# there — including the version-pinned core functions dir from zsh's compiled-in
+# default (…/Cellar/zsh/<ver>/share/zsh/functions). Once `brew upgrade zsh` bumps
+# that version the baked path is gone, so every shell descended from a pre-upgrade
+# session can no longer load _main_complete & co. ("function definition file not
+# found" — completion + autosuggestions break). Three guards:
+#   1. re-add brew's stable, non-versioned functions dir so the core completion
+#      functions stay reachable even if an inherited fpath lost its Cellar entry;
+#   2. de-dupe (FPATH otherwise accumulates a copy per nested shell);
+#   3. un-export so each zsh re-derives fpath from its own current binary and the
+#      value never freezes (zshenv runs for every zsh, so children self-heal).
+[[ -n "$HOMEBREW_PREFIX" && -d "$HOMEBREW_PREFIX/share/zsh/functions" ]] \
+    && fpath=("$HOMEBREW_PREFIX/share/zsh/functions" $fpath)
+typeset -U fpath
+typeset +x FPATH
 
 # pnpm: global bins + the node runtime pnpm provisions live here. pnpm 11 puts
 # shims in $PNPM_HOME/bin; older layouts used $PNPM_HOME directly. Add both.
@@ -720,7 +929,11 @@ configure_timezone() {
     log "Setting timezone to Asia/Taipei..."
     local target=Asia/Taipei current
     if [[ "$OS" == macos ]]; then
-        current=$($SUDO systemsetup -gettimezone 2>/dev/null | awk -F': ' '{print $2}' || true)
+        # Read the zone without sudo (systemsetup -gettimezone needs admin, which
+        # would make even an already-correct box prompt). /etc/localtime is a
+        # symlink into .../zoneinfo/<Area>/<City>.
+        current=$(readlink /etc/localtime 2>/dev/null || true)
+        current="${current#*/zoneinfo/}"
         if [[ "$current" == "$target" ]]; then
             sublog "already $target"
             return 0
@@ -1062,6 +1275,9 @@ main() {
     # any package work silences the warnings.
     configure_locale
     install_apps
+    # Purge before unminimize so we don't reinstall docs for packages we're
+    # about to remove.
+    purge_conflicts
     # After install_apps: unminimize reinstalls docs for everything already
     # installed, so base packages added above still end up with man pages.
     unminimize_ubuntu
