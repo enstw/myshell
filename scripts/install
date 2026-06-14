@@ -615,6 +615,23 @@ elif [[ -x /usr/local/bin/brew ]]; then
     eval "$(/usr/local/bin/brew shellenv)"
 fi
 
+# `brew shellenv` prepends its completions dir to fpath AND marks FPATH exported
+# (`export FPATH;`). An exported FPATH is inherited by child shells and frozen
+# there — including the version-pinned core functions dir from zsh's compiled-in
+# default (…/Cellar/zsh/<ver>/share/zsh/functions). Once `brew upgrade zsh` bumps
+# that version the baked path is gone, so every shell descended from a pre-upgrade
+# session can no longer load _main_complete & co. ("function definition file not
+# found" — completion + autosuggestions break). Three guards:
+#   1. re-add brew's stable, non-versioned functions dir so the core completion
+#      functions stay reachable even if an inherited fpath lost its Cellar entry;
+#   2. de-dupe (FPATH otherwise accumulates a copy per nested shell);
+#   3. un-export so each zsh re-derives fpath from its own current binary and the
+#      value never freezes (zshenv runs for every zsh, so children self-heal).
+[[ -n "$HOMEBREW_PREFIX" && -d "$HOMEBREW_PREFIX/share/zsh/functions" ]] \
+    && fpath=("$HOMEBREW_PREFIX/share/zsh/functions" $fpath)
+typeset -U fpath
+typeset +x FPATH
+
 # pnpm: global bins + the node runtime pnpm provisions live here. pnpm 11 puts
 # shims in $PNPM_HOME/bin; older layouts used $PNPM_HOME directly. Add both.
 export PNPM_HOME="$HOME/.local/share/pnpm"
