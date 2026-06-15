@@ -316,6 +316,7 @@ install_apps_macos() {
         ca-certificates
         bat eza fd zoxide starship tealdeer glow qrencode
         watch
+        age  # asymmetric file encryption (ships age-keygen too)
     )
     # Check-first: brew install skips installed formulae anyway, but invoking it
     # at all pays tap/update overhead on every re-run — only call it for what's
@@ -348,7 +349,7 @@ install_apps_ubuntu() {
         local pkgs=(
             git zsh jq tmux fzf ripgrep 7zip curl ca-certificates
             bat fd-find zoxide tealdeer qrencode build-essential wget gpg
-            unzip locales tzdata
+            age unzip locales tzdata
         )
         local missing=() p
         for p in "${pkgs[@]}"; do
