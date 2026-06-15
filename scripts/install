@@ -342,10 +342,13 @@ install_apps_ubuntu() {
     else
         # Check-first: apt-get install -y is idempotent but slow when invoked
         # for already-present packages — only ask it for what dpkg lacks.
+        # unzip is required by the bun.sh installer (it errors "unzip is
+        # required to install bun" otherwise); without it install_bun fails
+        # soft on minimal Ubuntu and the gstack skill loses its bun runtime.
         local pkgs=(
             git zsh jq tmux fzf ripgrep 7zip curl ca-certificates
             bat fd-find zoxide tealdeer qrencode build-essential wget gpg
-            locales tzdata
+            unzip locales tzdata
         )
         local missing=() p
         for p in "${pkgs[@]}"; do
