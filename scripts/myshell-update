@@ -75,6 +75,16 @@ if command -v pnpm &>/dev/null; then
     pnpm self-update || warn "pnpm self-update failed"
     pnpm runtime set node lts -g || warn "pnpm runtime set node lts failed"
     pnpm update -g || warn "pnpm update -g failed"
+    # `pnpm update -g` can re-link @pnpm/exe as an ordinary global dep, reverting
+    # its `pnpm` to the 34-byte npm placeholder: the native binary is only ever
+    # placed by the SEA self-install (`pnpm setup`), and setup.js — the preinstall
+    # that hardlinks it — does not run on a dependency re-link. The shim then execs
+    # a text file ("pnpm: 1: This: not found"). Heal via the official installer,
+    # the same `pnpm setup --force` path the bootstrap uses.
+    if ! pnpm --version >/dev/null 2>&1; then
+        warn "pnpm reverted to a placeholder binary after update — reinstalling via get.pnpm.io"
+        curl -fsSL https://get.pnpm.io/install.sh | sh - || warn "pnpm reinstall failed"
+    fi
 fi
 
 # Claude Code — native install (~/.local/bin), self-updates via its own command.
