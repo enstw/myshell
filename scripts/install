@@ -96,9 +96,26 @@ else
     NO_SUDO=1
 fi
 
+# Interactivity: the prompts below read a line from the controlling terminal.
+# In a pipe, container, or CI run there is none — and the /dev/tty device node
+# can still exist yet fail to open with ENXIO — so probe with a real open, not a
+# `-r` permission check. With no terminal we go non-interactive: prompts take
+# their defaults (and `confirm` defaults to No, unless MYSHELL_ASSUME_YES=1), so
+# `curl ... | sh` and automated runs never die on a prompt.
+if { : </dev/tty; } 2>/dev/null; then
+    INTERACTIVE=1
+else
+    INTERACTIVE=0
+    printf '==> No controlling terminal — non-interactive mode (prompts use defaults).\n'
+fi
+
 # ask PROMPT [DEFAULT] — read a line from tty, echo answer (or default if empty).
 ask() {
     local prompt="$1" default="${2:-}" reply
+    if [[ $INTERACTIVE -eq 0 ]]; then
+        printf '%s\n' "$default"
+        return 0
+    fi
     if [[ -n "$default" ]]; then
         read -rp "$prompt [$default] " reply </dev/tty
     else
@@ -108,8 +125,13 @@ ask() {
 }
 
 # confirm PROMPT — returns 0 if user answers y/Y, 1 otherwise. Default No.
+# Non-interactive: No, unless MYSHELL_ASSUME_YES=1 opts every confirm into Yes.
 confirm() {
     local reply
+    if [[ $INTERACTIVE -eq 0 ]]; then
+        [[ "${MYSHELL_ASSUME_YES:-0}" == 1 ]]
+        return
+    fi
     read -rp "$1 [y/N] " reply </dev/tty
     [[ "$reply" =~ ^[Yy] ]]
 }
@@ -178,10 +200,12 @@ install_apps_ubuntu() {
         sublog "no sudo — skipping apt installs; system packages assumed pre-installed via root"
     else
         sublog "apt base packages..."
+        # unzip is required by the bun.sh installer (it errors "unzip is required
+        # to install bun" otherwise); wget/gpg back the eza/glow apt-repo setup.
         $SUDO apt-get install -y \
             git zsh jq tmux fzf ripgrep 7zip curl ca-certificates \
             bat fd-find zoxide tealdeer qrencode build-essential wget gpg \
-            locales tzdata
+            unzip locales tzdata
     fi
 
     # Ubuntu names bat/fd differently; symlink into ~/.local/bin so aliases find them.
@@ -445,11 +469,24 @@ configure_git() {
     local current_name current_email new_name new_email
     current_name=$(git config --global user.name  2>/dev/null || true)
     current_email=$(git config --global user.email 2>/dev/null || true)
+    # Check-first: if both fields are already set, don't stop to re-prompt on a
+    # re-run — matches setup_pnpm/install_fonts idempotency, so a sync re-run is
+    # prompt-free. Change identity later via `git config --global` or ~/.gitconfig.
+    if [[ -n "$current_name" && -n "$current_email" ]]; then
+        sublog "already set: $current_name <$current_email> — skipping"
+        return 0
+    fi
     new_name=$(ask "git user.name?"  "$current_name")
     new_email=$(ask "git user.email?" "$current_email")
-    git config --global user.name  "$new_name"
-    git config --global user.email "$new_email"
-    sublog "$new_name <$new_email>"
+    # Only write non-empty values — a non-interactive run on a box with no prior
+    # identity would otherwise set user.name/user.email to the empty string.
+    if [[ -n "$new_name" ]]; then
+        git config --global user.name "$new_name"
+    fi
+    if [[ -n "$new_email" ]]; then
+        git config --global user.email "$new_email"
+    fi
+    sublog "${new_name:-(unset)} <${new_email:-(unset)}>"
 }
 
 configure_locale() {
@@ -494,7 +531,12 @@ configure_timezone() {
     log "Setting timezone to Asia/Taipei..."
     local target=Asia/Taipei current
     if [[ "$OS" == macos ]]; then
-        current=$($SUDO systemsetup -gettimezone 2>/dev/null | awk -F': ' '{print $2}' || true)
+        # Read the current zone WITHOUT sudo: /etc/localtime symlinks into the
+        # zoneinfo db (e.g. /var/db/timezone/zoneinfo/Asia/Taipei), so a re-run on
+        # an already-correct box never triggers a password prompt. `systemsetup
+        # -gettimezone` would require root just to read, prompting on every run.
+        current=$(readlink /etc/localtime 2>/dev/null || true)
+        current="${current##*/zoneinfo/}"
         if [[ "$current" == "$target" ]]; then
             sublog "already $target"
             return 0
@@ -543,10 +585,21 @@ install_agents() {
         return 0
     fi
     log "AI agents — Claude Code, Codex"
-    sublog "Pick a number: 0 none, 1 Claude, 2 Codex, 3 Claude+Codex."
-    sublog "Names still work too: all, none, or comma-separated claude,codex."
+    # Choice source: MYSHELL_AGENTS env override wins (lets unattended runs pick
+    # agents); else prompt when interactive; else skip — auto-installing agents
+    # on a headless run would surprise the operator.
     local choice
-    choice=$(ask "Install which agents?" "3")
+    if [[ -n "${MYSHELL_AGENTS:-}" ]]; then
+        choice="$MYSHELL_AGENTS"
+        sublog "MYSHELL_AGENTS=$choice"
+    elif [[ $INTERACTIVE -eq 1 ]]; then
+        sublog "Pick a number: 0 none, 1 Claude, 2 Codex, 3 Claude+Codex."
+        sublog "Names still work too: all, none, or comma-separated claude,codex."
+        choice=$(ask "Install which agents?" "3")
+    else
+        sublog "non-interactive — skipping agents (set MYSHELL_AGENTS to override)"
+        choice=0
+    fi
     case "$choice" in
         0|none|"") sublog "skipping all agents"; return 0 ;;
         3|all)

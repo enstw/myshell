@@ -7,7 +7,11 @@ Two-stage installer so a colleague runs one command on a bare Mac or minimal Ubu
 - `bootstrap` — POSIX-sh stage 1. Installs brew + bash 5 on macOS, refreshes apt on Ubuntu, then `exec`s stage 2.
 - `scripts/install` — bash 5 stage 2. Self-documenting; cross-cutting rules live in its header banner.
 
-Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
+Both pass `sh -n` / `bash -n`. **Ubuntu 24.04 container smoke test passed
+end-to-end (non-interactive) on 2026-06-13** via colima/nerdctl — locale, all
+upstream installers, pnpm 11.6.0, Node LTS v24.16.0, agents via `pnpm add -g`,
+dotfiles, and the npm-guard/npx invariants all verified. **Not yet run on a real
+bare Mac or bare-metal box.**
 
 ## Done in stage 2
 
@@ -29,6 +33,7 @@ Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
 1. Opt-in ENS font install from `ent.tw/font` (assumes redirect to GitHub releases JSON).
 1. Adds zsh to `/etc/shells`, offers `chsh`.
 1. Root + no-sudo containers: both stages now route privileged commands through a `$SUDO` shim that is empty when `EUID==0`, `sudo` otherwise, and fails fast with a clear message if non-root and sudo is missing.
+1. Non-interactive / headless runs: when there is no controlling terminal (probed by actually opening `/dev/tty` — the device node can exist yet fail with `ENXIO`), prompts fall back to defaults instead of crashing under `set -e`. `ask` returns its default, `confirm` returns No (or Yes under `MYSHELL_ASSUME_YES=1`), and the agent menu installs nothing unless `MYSHELL_AGENTS` is set (e.g. `MYSHELL_AGENTS=3` for Claude+Codex). This is what makes `curl … | sh` and CI/container runs work. git identity is left untouched when both fields resolve empty.
 
 ## Deferred (not yet in `scripts/install`)
 
@@ -43,14 +48,20 @@ Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
 1. `chsh` on macOS prompts for the user's login password; acceptable but unavoidable.
 1. Stage 1 still needs `apt-get update` to succeed; if a minimal image has no sources configured at all, it'll fail — haven't handled that case. (Missing-sudo on root is now handled via the `$SUDO` shim.)
 1. 2026-05-10 fresh Mac bootstrap hit `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` during agent installs, and another run appeared to stop around the Bun installer without the final `Done` line. Stage 2 now forces Homebrew CA postinstall, makes Bun and the pnpm agent installs fail soft, and prints an `ERR` trap diagnostic for unexpected exits.
+1. tealdeer `tldr --update` failed during the 2026-06-13 container run (fail-soft; `auto_update=true` retries on first use). Cause not yet diagnosed — likely the apt tealdeer version or a moved page-archive URL; unrelated to the pnpm migration. The bun-needs-`unzip` gap that the same run exposed is already fixed (added to the apt base list).
 
 ## How to resume / test
 
-1. Fresh Ubuntu 24.04 container:
+1. Fresh Ubuntu 24.04 container (non-interactive — validated 2026-06-13 on macOS
+   via `colima start smoke --runtime containerd` then `colima nerdctl -p smoke -- run …`;
+   plain `docker`/`podman` work the same). `MYSHELL_AGENTS=3` installs Claude+Codex;
+   omit it to skip agents. The installer now self-detects the missing tty:
    ```sh
-   docker run --rm -it -v "$PWD":/myshell ubuntu:24.04 bash -c \
-     'apt-get update && apt-get install -y sudo curl git && useradd -m -s /bin/bash t && \
-      echo "t ALL=(ALL) NOPASSWD:ALL" >>/etc/sudoers && su - t -c "cp -r /myshell ~/myshell && ~/myshell/bootstrap"'
+   docker run --rm -v "$PWD":/myshell:ro ubuntu:24.04 bash -c \
+     'apt-get update && apt-get install -y sudo curl git ca-certificates && \
+      useradd -m -s /bin/bash t && echo "t ALL=(ALL) NOPASSWD:ALL" >>/etc/sudoers && \
+      cp -r /myshell /home/t/myshell && chown -R t:t /home/t/myshell && \
+      su - t -c "MYSHELL_AGENTS=3 ~/myshell/bootstrap" </dev/null'
    ```
 1. Root + no-sudo container (exercises the `$SUDO` shim):
    ```sh
@@ -62,9 +73,10 @@ Both pass `sh -n` / `bash -n`. **Not yet run end-to-end on a real bare box.**
 
 ## Where to pick up
 
-Decide whether to:
+(a) — the Ubuntu container round-trip — is **done** (2026-06-13) and surfaced two
+real fixes: bun needs `unzip`, and the installer must survive having no tty. Both
+landed. Next:
 
-- (a) Smoke-test what's there on a container before adding more, or
-- (b) Keep layering in the deferred items, then test once.
-
-Leaning (a) — container round-trip will expose path/sudo/apt issues faster than reading.
+- (b) Layer in the deferred items (yt-dlp, command-not-found, optional apps), then re-run the container smoke test (the self-contained one-liner under "How to resume / test" below).
+- (c) Run on a real bare Mac (brew path is still container-untested) and a bare-metal/VM Ubuntu.
+- Diagnose the fail-soft `tldr --update` failure (see risks above).
