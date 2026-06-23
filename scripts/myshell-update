@@ -68,22 +68,38 @@ if [[ -f "$ZINIT_HOME/zinit.zsh" ]]; then
     zsh -ic 'zinit self-update; zinit update --all' || warn "zinit update failed"
 fi
 
-# pnpm — self-update, refresh the Node LTS runtime, and update global
-# packages (Codex lives here; the self-updating agents are below).
+# pnpm — refresh the Node LTS runtime and update global packages (Codex lives
+# here; the self-updating agents are below).
+#
+# No `pnpm self-update` on purpose. For the standalone @pnpm/exe (SEA) build it
+# installs the new pnpm from a freshly-mktemp'd dir and records it as a LINKED
+# global dep ("@pnpm/exe": "file:/tmp/tmp.XXXX"). After a reboot/tmp-reap that
+# dir is gone, so the next `pnpm update -g` aborts with
+# ERR_PNPM_LINKED_PKG_DIR_NOT_FOUND. A SEA build's real update path is the
+# get.pnpm.io installer the bootstrap uses; `pnpm update -g` keeps @pnpm/exe
+# current within its major, and the heal below repairs the rest.
 if command -v pnpm &>/dev/null; then
-    log "Updating pnpm, Node LTS, and pnpm global packages..."
-    pnpm self-update || warn "pnpm self-update failed"
+    log "Updating pnpm runtime and global packages..."
     pnpm runtime set node lts -g || warn "pnpm runtime set node lts failed"
-    pnpm update -g || warn "pnpm update -g failed"
-    # `pnpm update -g` can re-link @pnpm/exe as an ordinary global dep, reverting
-    # its `pnpm` to the 34-byte npm placeholder: the native binary is only ever
-    # placed by the SEA self-install (`pnpm setup`), and setup.js — the preinstall
-    # that hardlinks it — does not run on a dependency re-link. The shim then execs
-    # a text file ("pnpm: 1: This: not found"). Heal via the official installer,
-    # the same `pnpm setup --force` path the bootstrap uses.
-    if ! pnpm --version >/dev/null 2>&1; then
-        warn "pnpm reverted to a placeholder binary after update — reinstalling via get.pnpm.io"
-        curl -fsSL https://get.pnpm.io/install.sh | sh - || warn "pnpm reinstall failed"
+    pnpm_update_ok=1
+    pnpm update -g || { pnpm_update_ok=0; warn "pnpm update -g failed"; }
+    # `pnpm update -g` can leave pnpm broken two ways, both because @pnpm/exe's
+    # native `pnpm` is only ever placed by setup.js (its preinstall):
+    #   1. it re-links @pnpm/exe as an ordinary registry dep and reverts `pnpm`
+    #      to npm's 34-byte placeholder — setup.js does NOT run on a re-link — so
+    #      the shim execs a text file ("pnpm: 1: This: not found") and
+    #      `pnpm --version` fails;
+    #   2. a stale `file:` link from an older `pnpm self-update` (pre-this-fix)
+    #      dangles, so the update above errored while the binary still runs.
+    # `pnpm add -g @pnpm/exe@latest` heals both: it re-pins the manifest to a
+    # registry version (clearing the dead link) and, unlike a re-link, DOES run
+    # setup.js to re-download and hardlink the native binary. Fall back to the
+    # get.pnpm.io installer if pnpm is too broken to even run `pnpm add`.
+    if [[ "$pnpm_update_ok" == 0 ]] || ! pnpm --version >/dev/null 2>&1; then
+        warn "pnpm broken after update (placeholder binary or stale file: link) — repinning @pnpm/exe"
+        if ! pnpm add -g @pnpm/exe@latest; then
+            curl -fsSL https://get.pnpm.io/install.sh | sh - || warn "pnpm reinstall failed"
+        fi
     fi
 fi
 
