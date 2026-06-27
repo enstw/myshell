@@ -35,6 +35,11 @@ fi
 
 if command -v brew &>/dev/null; then
     log "Updating Homebrew packages..."
+    # Homebrew 6.0 made "ask mode" (a "Do you want to proceed?" confirmation
+    # before upgrading) the default. This is an unattended sweep, so opt out via
+    # the documented env var (`brew upgrade --help`: "Ask mode is the default
+    # ... unless $HOMEBREW_NO_ASK is set") instead of blocking on the prompt.
+    export HOMEBREW_NO_ASK=1
     brew update || warn "brew update failed"
     brew upgrade || warn "brew upgrade failed"
     brew cleanup || warn "brew cleanup failed"
@@ -82,7 +87,10 @@ if command -v pnpm &>/dev/null; then
     log "Updating pnpm runtime and global packages..."
     pnpm runtime set node lts -g || warn "pnpm runtime set node lts failed"
     pnpm_update_ok=1
-    pnpm update -g || { pnpm_update_ok=0; warn "pnpm update -g failed"; }
+    # `--yes` auto-approves pnpm 11's build-script prompt (@pnpm/exe ships
+    # setup.js to hardlink its native binary; `pnpm update` rejects the
+    # per-package `--allow-build`, so `--yes` is the non-interactive path here).
+    pnpm update -g --yes || { pnpm_update_ok=0; warn "pnpm update -g failed"; }
     # `pnpm update -g` can leave pnpm broken two ways, both because @pnpm/exe's
     # native `pnpm` is only ever placed by setup.js (its preinstall):
     #   1. it re-links @pnpm/exe as an ordinary registry dep and reverts `pnpm`
@@ -97,7 +105,7 @@ if command -v pnpm &>/dev/null; then
     # get.pnpm.io installer if pnpm is too broken to even run `pnpm add`.
     if [[ "$pnpm_update_ok" == 0 ]] || ! pnpm --version >/dev/null 2>&1; then
         warn "pnpm broken after update (placeholder binary or stale file: link) — repinning @pnpm/exe"
-        if ! pnpm add -g @pnpm/exe@latest; then
+        if ! pnpm add -g --allow-build=@pnpm/exe @pnpm/exe@latest; then
             curl -fsSL https://get.pnpm.io/install.sh | sh - || warn "pnpm reinstall failed"
         fi
     fi
