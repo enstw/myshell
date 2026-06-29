@@ -9,6 +9,10 @@ set -euo pipefail
 echo "==> Updating system packages..."
 
 if command -v brew &>/dev/null; then
+    # Homebrew 6.0 made `brew upgrade` ask for confirmation by default
+    # ("Do you want to proceed with the upgrade? [y/n]"). HOMEBREW_NO_ASK
+    # restores unattended behavior so `u` never blocks on a prompt.
+    export HOMEBREW_NO_ASK=1
     brew update
     brew upgrade
     brew cleanup
