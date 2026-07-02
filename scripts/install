@@ -979,6 +979,11 @@ command -v qrencode >/dev/null && alias qrencode='qrencode -t ansiutf8 -r'
 command -v uv       >/dev/null && alias uvu='uv tool upgrade --all'
 [[ -x "$HOME/bin/myshell-update" ]] && alias u="$HOME/bin/myshell-update"
 
+# Quick Look from the terminal (macOS only) — like pressing space in Finder.
+# qlmanage blocks until the panel closes and is chatty, so background+disown
+# (&!) and silence it. Esc dismisses; multiple files get the arrow-key rail.
+command -v qlmanage >/dev/null && ql() { qlmanage -p "$@" >/dev/null 2>&1 &! }
+
 # This machine is pnpm-only. `npx` maps to `pnpm dlx`; `npm` is guarded with a
 # function (not a flat alias — subcommands differ, e.g. `npm i -g X` is
 # `pnpm add -g X`) so a stray `npm` nudges to pnpm instead of running wrong.
