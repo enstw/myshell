@@ -228,9 +228,22 @@ sudo_work_pending() {
         tz=$(readlink /etc/localtime 2>/dev/null || true)
         [[ "${tz#*/zoneinfo/}" != Asia/Taipei ]] && return 0            # configure_timezone
     fi
-    local zsh_path
+    # set_login_shell touches /etc/shells only when a switch to zsh will
+    # actually happen — mirror its guards: not when the login shell is
+    # already zsh (basename match, like the step), not when the recorded
+    # answer is "no". An absent answer still predicts work: the question is
+    # about to be asked and a "yes" must find sudo warm. macOS never
+    # registers brew zsh in /etc/shells, so without these mirrors a
+    # converged Mac pre-warms sudo on every re-run (found preparing the
+    # macOS CI leg, 2026-07-04).
+    local zsh_path current
     zsh_path=$(command -v zsh || true)
-    [[ -n "$zsh_path" ]] && ! grep -qx "$zsh_path" /etc/shells 2>/dev/null && return 0  # set_login_shell
+    current=$(current_login_shell)
+    if [[ -n "$zsh_path" ]] && ! grep -qx "$zsh_path" /etc/shells 2>/dev/null \
+       && [[ "${current:-${SHELL:-}}" != */zsh && "${current:-${SHELL:-}}" != zsh ]] \
+       && [[ "$(cat "$STATE_DIR/login-shell" 2>/dev/null || true)" != no ]]; then
+        return 0                                                        # set_login_shell
+    fi
     return 1
 }
 
