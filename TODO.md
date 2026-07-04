@@ -47,11 +47,11 @@ Completed work and resolved incidents are archived in [.archive/TODO-done.md](.a
 
 (2026-07-04)
 
-1. **Get CI green — it has failed on every run since the workflow landed (2026-06-14).** The fresh bootstrap itself converges to `Done` in both containers; the jobs die on `scripts/ci-roundtrip`'s zero-warning gate, which fires right after the fresh run — so the idempotent re-run leg has never actually executed in CI. Warnings as of run 28698801816 (2026-07-04):
-   1. `download failed; ~/.config/starship.toml not installed` (both jobs) — **fixed 2026-07-04**: the file was renamed in `myshell-starship`; the step now fetches `starship-tokyo-night.toml`, install-once.
-   1. `visudo not found — skipping /etc/sudoers.d/50-myshell-apt` (root job, deterministic) — the root container has no sudo at all, so a sudoers drop-in is pointless; `configure_apt_sudoers` should skip with a `sublog` when sudo itself is absent, not `warn`.
-   1. `tldr --update failed; will retry on first use` (both jobs, every run) — cause unverified; reproduce inside `ubuntu:24.04` (suspects: apt's tealdeer too old for the current pages archive, or container networking).
-   1. `pnpm install failed; continuing` (root job, intermittent — Node provisioning succeeded later in the same log) — transient network during the standalone-pnpm download; consider one retry.
+1. **Get CI green — it has failed on every run since the workflow landed (2026-06-14).** The fresh bootstrap itself converges to `Done` in both containers; the jobs die on `scripts/ci-roundtrip`'s zero-warning gate, which fires right after the fresh run — so the idempotent re-run leg has never actually executed in CI. All four warnings from run 28698801816 were fixed on 2026-07-04 (**verify the next push goes green**):
+   1. `download failed; ~/.config/starship.toml not installed` (both jobs) — the file was renamed in `myshell-starship`; the step now fetches `starship-tokyo-night.toml`, install-once.
+   1. `visudo not found — skipping /etc/sudoers.d/50-myshell-apt` (root job, deterministic) — the drop-in is pointless for root (no password prompts to remove) and the no-sudo image has no visudo; `configure_apt_sudoers` now skips as root with a `sublog`.
+   1. `tldr --update failed; will retry on first use` (both jobs, every run) — tealdeer < 1.7 (noble ships 1.6.1) hardcodes the retired `tldr.sh/assets/tldr.zip`, which now serves an HTML redirect stub it can't follow; `configure_tealdeer` now seeds the page cache itself from github releases for those versions, with auto-update off.
+   1. `pnpm install failed; continuing` (root job, intermittent) — the get.pnpm.io installer now gets one full retry before failing soft.
 1. The 2026-06-12 unknowns are settled by the same CI logs: Node LTS via pnpm 11 works (root job reaches "Node LTS active (v24.18.0)") and `yes | unminimize` completes cleanly in the minimized container (fresh run reaches `Done` with no unminimize warning).
 1. **Owner (jz): run the interactive docker round-trips on macOS Docker Desktop** — the two commands in "How to resume / test" above. CI covers the headless path; the interactive prompt phase (gather_answers on a real tty: git identity, agent menu, fonts, chsh) is what these exercise.
 1. After both are green, the remaining untested leg is a fresh bare Mac (brew path, Terminal profile, fonts).
