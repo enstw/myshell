@@ -196,6 +196,7 @@ sudo_work_pending() {
             dpkg -s "$p" >/dev/null 2>&1 && return 0                    # purge_conflicts
         done
         apt_sudoers_pending && return 0                                 # configure_apt_sudoers
+        id -nG "$(id -un)" | grep -qw docker || return 0                # configure_docker_group
         [[ -f /etc/dpkg/dpkg.cfg.d/excludes ]] && return 0              # unminimize_ubuntu
         locale_configured || return 0                                   # configure_locale
         [[ "$(ubuntu_timezone)" == Asia/Taipei ]] || return 0           # configure_timezone
@@ -399,6 +400,7 @@ UBUNTU_BASE_PKGS=(
     git zsh jq tmux fzf ripgrep 7zip curl ca-certificates
     bat fd-find zoxide tealdeer qrencode build-essential wget gpg
     age unzip locales tzdata
+    docker.io  # configure_docker_group makes it usable without sudo
 )
 # apt packages purge_conflicts removes on sight (see the header's uv/pnpm rules).
 UBUNTU_PURGE_PY_PKGS=(pipx python3-poetry pyenv)
@@ -558,6 +560,36 @@ configure_apt_sudoers() {
     mkdir -p "$STATE_DIR"
     printf '%s\n' "$content" >"$mirror"
     sublog "installed $sudoers_file"
+}
+
+# Docker without sudo: the daemon socket is root:docker, so docker-group
+# membership is what makes `docker run` work for the user. Queries the group
+# database (id -nG with an explicit user), not the current process's group
+# set — a just-run usermod must count as converged even though this login
+# shell predates it. Ubuntu-only (on macOS no docker is installed). Mirrored
+# in sudo_work_pending so converged re-runs stay prompt-free.
+configure_docker_group() {
+    [[ "$OS" == ubuntu ]] || return 0
+    local me
+    me=$(id -un)
+    log "Adding $me to the docker group (docker without sudo)..."
+    if [[ $EUID -eq 0 ]]; then
+        sublog "running as root — already has the socket; skipping"
+        return 0
+    fi
+    if [[ "$NO_SUDO" == 1 ]]; then
+        warn "no sudo — cannot add to docker group; ask root to run: usermod -aG docker $me"
+        return 0
+    fi
+    if id -nG "$me" | grep -qw docker; then
+        sublog "already a member — skipping"
+        return 0
+    fi
+    # docker.io's postinst creates the group; recreate defensively in case
+    # that install failed.
+    getent group docker >/dev/null || $SUDO groupadd --system docker
+    $SUDO usermod -aG docker "$me"
+    sublog "added — takes effect on next login (until then: sg docker -c '...')"
 }
 
 unminimize_ubuntu() {
@@ -1479,6 +1511,8 @@ main() {
     # is already pre-warmed (warm_sudo, up front) — so the `u` updater never
     # has to prompt. No-op on macOS and on re-runs where the file is current.
     configure_apt_sudoers
+    # After install_apps (docker.io's postinst creates the docker group).
+    configure_docker_group
     # Purge before unminimize so we don't reinstall docs for packages we're
     # about to remove.
     purge_conflicts
