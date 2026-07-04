@@ -7,7 +7,7 @@ Two-stage installer so a colleague runs one command on a bare Mac or minimal Ubu
 - `bootstrap` — POSIX-sh stage 1. Installs brew + bash 5 on macOS, refreshes apt on Ubuntu, then runs stage 2 (no `exec` — the cleanup trap must outlive it).
 - `scripts/install` — bash 5 stage 2. Self-documenting; cross-cutting rules live in its header banner.
 
-CI (GitHub Actions) runs `scripts/check` plus two headless container round-trips — sudo user and root, both in minimized `ubuntu:24.04`, fresh run + idempotent re-run, asserting zero warnings — on every push. **CI is currently red on every run (see "Where to pick up"). Not yet run end-to-end on a real bare Mac.**
+CI (GitHub Actions) runs `scripts/check` plus two headless container round-trips — sudo user and root, both in minimized `ubuntu:24.04`, fresh run + idempotent re-run, asserting zero warnings — on every push. **Green since 2026-07-04** (run 28699567420 was the first green in the workflow's history — every earlier run failed the zero-warning gate). **Not yet run end-to-end on a real bare Mac.**
 
 Completed work and resolved incidents are archived in [.archive/TODO-done.md](.archive/TODO-done.md) (and `git log`); current behavior is documented by the `scripts/install` header banner and `README.md`.
 
@@ -47,11 +47,7 @@ Completed work and resolved incidents are archived in [.archive/TODO-done.md](.a
 
 (2026-07-04)
 
-1. **Get CI green — it has failed on every run since the workflow landed (2026-06-14).** The fresh bootstrap itself converges to `Done` in both containers; the jobs die on `scripts/ci-roundtrip`'s zero-warning gate, which fires right after the fresh run — so the idempotent re-run leg has never actually executed in CI. All four warnings from run 28698801816 were fixed on 2026-07-04 (**verify the next push goes green**):
-   1. `download failed; ~/.config/starship.toml not installed` (both jobs) — the file was renamed in `myshell-starship`; the step now fetches `starship-tokyo-night.toml`, install-once.
-   1. `visudo not found — skipping /etc/sudoers.d/50-myshell-apt` (root job, deterministic) — the drop-in is pointless for root (no password prompts to remove) and the no-sudo image has no visudo; `configure_apt_sudoers` now skips as root with a `sublog`.
-   1. `tldr --update failed; will retry on first use` (both jobs, every run) — tealdeer < 1.7 (noble ships 1.6.1) hardcodes the retired `tldr.sh/assets/tldr.zip`, which now serves an HTML redirect stub it can't follow; `configure_tealdeer` now seeds the page cache itself from github releases for those versions, with auto-update off.
-   1. `pnpm install failed; continuing` (root job, intermittent) — the get.pnpm.io installer now gets one full retry before failing soft.
+1. **CI went green for the first time on 2026-07-04** (run 28699567420) after fixing every warning the zero-warning gate had tripped on since 2026-06-14 — full details in `git log` for that day: starship config renamed upstream (now fetches `starship-tokyo-night.toml`, install-once), sudoers drop-in skipped as root, tealdeer < 1.7's dead update URL worked around by seeding the page cache directly, one retry for the pnpm installer download, and `SHELL` exported to that installer (its rc step dies with `ERR_PNPM_UNKNOWN_SHELL` in no-login-env root containers). Both containers now pass fresh + idempotent re-run + the headless no-answer abort.
 1. The 2026-06-12 unknowns are settled by the same CI logs: Node LTS via pnpm 11 works (root job reaches "Node LTS active (v24.18.0)") and `yes | unminimize` completes cleanly in the minimized container (fresh run reaches `Done` with no unminimize warning).
 1. **Owner (jz): run the interactive docker round-trips on macOS Docker Desktop** — the two commands in "How to resume / test" above. CI covers the headless path; the interactive prompt phase (gather_answers on a real tty: git identity, agent menu, fonts, chsh) is what these exercise.
 1. After both are green, the remaining untested leg is a fresh bare Mac (brew path, Terminal profile, fonts).
