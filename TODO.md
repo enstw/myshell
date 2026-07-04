@@ -14,7 +14,7 @@ Completed work and resolved incidents are archived in [.archive/TODO-done.md](.a
 ## Deferred (not yet in `scripts/install`)
 
 1. `yt-dlp` via `uv tool install`.
-1. Optional apps: quarto + TinyTeX, pandoc + xelatex, proxmark3, zed. (docker: done on Ubuntu 2026-07-04 — `docker.io` + docker group; macOS flavor still undecided.)
+1. Optional apps: quarto + TinyTeX, pandoc + xelatex, proxmark3, zed. (docker: done 2026-07-04 — Ubuntu `docker.io` + docker group; macOS colima + docker CLI formulae, `colima start` boots the daemon. Untested until the bare-Mac leg.)
 1. Ubuntu `command-not-found` data install (`sudo apt install command-not-found && sudo apt update`).
 1. Headless/non-interactive mode — `ask`/`confirm` need `/dev/tty`, so a tty-less run dies at the first question (via the ERR trap). `scripts/ci-roundtrip` pre-seeds `~/.local/state/myshell/*` and git identity (that is how CI runs headless); a `--yes`-style flag would be cleaner for humans.
 1. `myshell` dispatcher (`myshell update|sync|agents`) — deliberately deferred until a third user-facing verb exists; today `u` + re-running bootstrap cover the whole post-install surface.

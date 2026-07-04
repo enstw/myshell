@@ -374,6 +374,7 @@ install_apps_macos() {
         bat eza fd zoxide starship tealdeer glow qrencode
         watch
         age  # asymmetric file encryption (ships age-keygen too)
+        colima docker  # docker CLI only — colima is the VM/daemon (`colima start`)
     )
     # Check-first: brew install skips installed formulae anyway, but invoking it
     # at all pays tap/update overhead on every re-run — only call it for what's
