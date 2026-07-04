@@ -1020,8 +1020,15 @@ deploy_scripts() {
 
     sublog "~/.config/starship.toml"
     mkdir -p "$HOME/.config"
-    fetch_config https://github.com/enstw/myshell-starship/raw/refs/heads/master/starship.toml \
-                 "$HOME/.config/starship.toml"
+    # Install-once, not sync: an existing starship.toml is the user's — maybe
+    # hand-edited, maybe another variant from myshell-starship — never clobber
+    # it. Delete the file to re-fetch the tokyo-night default.
+    if [[ -f "$HOME/.config/starship.toml" ]]; then
+        sublog "already present — keeping (rm to re-fetch the default)"
+    else
+        fetch_config https://github.com/enstw/myshell-starship/raw/refs/heads/master/starship-tokyo-night.toml \
+                     "$HOME/.config/starship.toml"
+    fi
 
     sublog "eza tokyonight theme"
     local eza_dir
