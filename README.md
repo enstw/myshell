@@ -16,6 +16,17 @@ From a checkout (uses local `scripts/install`, good for iterating):
 ./bootstrap
 ```
 
+Headless / unattended (CI, cloud VMs): pre-seed the answers, then run bootstrap with no tty — it never fabricates an answer, so an unseeded question aborts loudly instead:
+
+```sh
+mkdir -p ~/.local/state/myshell
+printf 'claude,codex\n' > ~/.local/state/myshell/agents   # or empty for none
+printf 'no\n'  > ~/.local/state/myshell/fonts              # yes/no
+printf 'yes\n' > ~/.local/state/myshell/login-shell        # yes/no
+git config --global user.name  "Your Name"
+git config --global user.email you@example.com
+```
+
 Two stages:
 
 1. `bootstrap` — POSIX-sh. Installs Homebrew + bash 5 on macOS (skips either if already present), or refreshes apt on Ubuntu, then runs stage 2 (no `exec` — bootstrap's cleanup trap must outlive it).
@@ -40,7 +51,7 @@ Read the header banner at the top of `scripts/install` for the cross-cutting rul
 | `bootstrap` | Stage 1. Run this. |
 | `scripts/install` | Stage 2. The source of truth — read its header for design rules. |
 | `scripts/myshell-update` | Deployed to `~/bin/myshell-update` (alias `u`). Refreshes brew/apt/zinit/pnpm/claude/opencode/agy/gstack. |
-| `scripts/check` | Static gate: syntax-checks all three scripts, verifies the output-helper blocks are byte-identical. Run before committing. |
+| `scripts/check` | Static gate: syntax-checks all three scripts, verifies the output-helper blocks are byte-identical (`--fix` rewrites them from `bootstrap`'s copy). Run before committing. |
 | `scripts/ci-roundtrip` | Headless container round-trip (seeds the recorded answers, runs bootstrap twice, asserts). Used by CI. |
 | `.github/workflows/ci.yml` | CI: `scripts/check` + both round-trips (sudo user and root) in minimized `ubuntu:24.04` containers. |
 | `TODO.md` | What's deferred, what's untested. |

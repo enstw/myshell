@@ -21,7 +21,9 @@ set -Eeuo pipefail
 #   be quiet), prompt only via gather_answers + a recorded answer under
 #   $STATE_DIR, fail hard only if the shell is broken without it (otherwise
 #   warn), add it to main() in dependency order, and cover the result in
-#   scripts/ci-roundtrip.
+#   scripts/ci-roundtrip. Pairing rule: a tool with its own update path gets
+#   its scripts/myshell-update section in the same commit — provisioning
+#   lives here, maintenance lives there, and they drift apart unless paired.
 #
 # - Step grammar: use the verbs that already exist — install_ (put software
 #   on disk), configure_/set_ (system or user state), deploy_ (write files
@@ -85,7 +87,13 @@ set -Eeuo pipefail
 #   decision, not system state, is the idempotency key, so re-runs are quiet
 #   and the long package phase runs unattended (chsh may still ask for a
 #   password at the very end). Delete a state file to be asked again.
-#   Headless runs: pre-seed the state files and git identity beforehand.
+#   Headless runs: the answer store IS the supported seeding interface —
+#   pre-seed $STATE_DIR/agents (normalized agent list, e.g. "claude,codex";
+#   empty = none), $STATE_DIR/fonts (yes/no), $STATE_DIR/login-shell (yes/no),
+#   and `git config --global user.name`/`user.email` for the identity
+#   prompt; no tty is needed after that. scripts/ci-roundtrip is the
+#   reference implementation. A new choose_* question must be added to that
+#   list and to ci-roundtrip's seeding in the same commit.
 #   When a prompt cannot be read (no tty), ask/confirm die instead of
 #   fabricating an answer — a fabricated answer would get RECORDED as the
 #   user's decision and silently suppress the question forever (2026-07-04).
