@@ -348,11 +348,16 @@ install_pnpm() {
     # PNPM_HOME is already exported (see top of script); the installer honors it
     # so the home is identical on macOS and Ubuntu. It also appends a PNPM_HOME
     # block to ~/.zshrc/~/.bashrc — harmless; our generated ~/.zshenv owns PATH.
+    # SHELL must be in the installer's *environment* ($SHELL alone is not
+    # enough: bash fills it from /etc/passwd but doesn't export it), or its
+    # rc-file step dies with ERR_PNPM_UNKNOWN_SHELL — after placing the
+    # binary, so pnpm "works" while the run counts a failure. Hit as root in
+    # containers (plain bash -ec, no login env).
     # One retry: the installer's tarball download (github releases) is an
     # occasional transient failure in CI containers.
-    if ! curl -fsSL https://get.pnpm.io/install.sh | sh -; then
+    if ! curl -fsSL https://get.pnpm.io/install.sh | SHELL="${SHELL:-$(command -v bash)}" sh -; then
         sublog "pnpm installer failed — retrying once..."
-        if ! curl -fsSL https://get.pnpm.io/install.sh | sh -; then
+        if ! curl -fsSL https://get.pnpm.io/install.sh | SHELL="${SHELL:-$(command -v bash)}" sh -; then
             warn "pnpm install failed; continuing (node/Codex steps will skip)"
             return 0
         fi
