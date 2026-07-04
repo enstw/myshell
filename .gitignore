@@ -6,3 +6,6 @@
 
 # Antigravity CLI (agy) per-project state — symlinks into ~/.gemini config.
 .antigravitycli/
+
+# Codex CLI per-project droppings (shows up as an empty marker file).
+.codex
