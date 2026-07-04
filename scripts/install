@@ -347,9 +347,14 @@ install_pnpm() {
     # PNPM_HOME is already exported (see top of script); the installer honors it
     # so the home is identical on macOS and Ubuntu. It also appends a PNPM_HOME
     # block to ~/.zshrc/~/.bashrc — harmless; our generated ~/.zshenv owns PATH.
+    # One retry: the installer's tarball download (github releases) is an
+    # occasional transient failure in CI containers.
     if ! curl -fsSL https://get.pnpm.io/install.sh | sh -; then
-        warn "pnpm install failed; continuing (node/Codex steps will skip)"
-        return 0
+        sublog "pnpm installer failed — retrying once..."
+        if ! curl -fsSL https://get.pnpm.io/install.sh | sh -; then
+            warn "pnpm install failed; continuing (node/Codex steps will skip)"
+            return 0
+        fi
     fi
     [[ -x "$PNPM_HOME/bin/pnpm" || -x "$PNPM_HOME/pnpm" ]] \
         && sublog "pnpm installed" \
@@ -499,6 +504,13 @@ configure_apt_sudoers() {
     local sudoers_file="/etc/sudoers.d/50-myshell-apt"
     local mirror="$STATE_DIR/apt-sudoers.applied"
     log "Configuring passwordless apt/snap for 'u' updates ($sudoers_file)..."
+    # As root the drop-in is pointless: it exists to remove password prompts
+    # for the invoking user, and root has none ('u' runs apt directly). Also
+    # the no-sudo root container has no visudo to validate with.
+    if [[ $EUID -eq 0 ]]; then
+        sublog "running as root — no password prompts to remove; skipping"
+        return 0
+    fi
     if [[ "$NO_SUDO" == 1 ]]; then
         warn "no sudo — skipping $sudoers_file; ask root to install it for passwordless updates"
         return 0
