@@ -23,6 +23,21 @@ set -Eeuo pipefail
 #   warn), add it to main() in dependency order, and cover the result in
 #   scripts/ci-roundtrip.
 #
+# - Step grammar: use the verbs that already exist — install_ (put software
+#   on disk), configure_/set_ (system or user state), deploy_ (write files
+#   from the repo), purge_ (remove policy-violating tools), choose_/gather_
+#   (record answers). Idempotency guards are check-first (`command -v` or a
+#   path test) and stay per-step semantic, not a shared helper — pnpm's guard
+#   is "shim exists AND runs", claude's is "native binary after evicting the
+#   pnpm copy"; no generic have() expresses those. OS branches, three tiers:
+#   a one-OS step opens with a guard clause ([[ "$OS" == ubuntu ]] || return 0);
+#   a both-OS step whose branches stay under ~15 lines uses an inline
+#   `if [[ "$OS" == macos ]]`; only large parallel implementations get an
+#   _macos/_ubuntu pair behind a case dispatch (install_apps is the sole
+#   example today). Shared helpers exist where the RECIPE repeats, not the
+#   verb: apt_keyring_repo (third-party apt repos), fetch_config (idempotent
+#   downloads), install_agent (fail-soft agent installers).
+#
 # - Python tooling: `uv` is the only sanctioned Python tool. Never pip, pipx,
 #   python -m venv, pyenv, or poetry. Translate upstream `pip install X` or
 #   `pipx install X` to `uv tool install X` or a `uv venv` + `uv pip install`.
@@ -707,6 +722,10 @@ install_zinit() {
 # leaving them around lets PATH order silently pick the wrong binary. Both
 # functions are fail-soft and check-first: a clean machine prints "nothing to
 # purge" and moves on; a brew/apt dependency conflict warns instead of aborting.
+# The two functions share a skeleton on purpose WITHOUT sharing code: the
+# natural extraction (helper echoes removed items, caller captures via $(...))
+# would run warn inside a subshell and silently drop its WARNINGS increment,
+# and the purge-active branches have no CI coverage — keep them parallel.
 purge_conflicts() {
     log "Purging non-sanctioned Python/Node tools..."
     purge_non_uv_python

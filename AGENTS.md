@@ -24,4 +24,6 @@ Two stages:
 - Idempotent: every step is safe to rerun.
 - Failure policy: required tools (brew/apt base packages, uv, starship, zinit) fail hard; optional steps (pnpm, bun, AI agents, fetched configs, fonts) fail soft — a transient network/TLS issue must not abort the bootstrap.
 - Output vocabulary: `log`/`sublog`/`warn`/`die`, duplicated byte-identical across all three scripts (a sourced lib can't reach them all — see the header rule in `scripts/install`). `warn` goes to stderr and is counted into the final Done line; fail-soft failures must `warn`, not `sublog`.
+- Step grammar and OS-branch tiers (guard clause for one-OS steps, inline `if` for small divergence, `_macos`/`_ubuntu` pair only for large parallel implementations) are documented in the `scripts/install` header — follow them when adding steps. New third-party apt repos go through `apt_keyring_repo`.
+- Never extract a shared helper that would call `warn` inside a subshell (`$(...)` capture) — the `WARNINGS` counter increment is silently lost even though the line still prints.
 - **Out of scope:** SSH keys, host naming, VM bootstrap, Git identity.
