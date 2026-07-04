@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# CI round-trip — runs INSIDE the test container (as the sudo-capable user
-# or as root). myshell is interactive by design, so this seeds every
+# CI round-trip — runs INSIDE the test environment: an ubuntu container (as
+# the sudo-capable user or as root) or directly on a macOS runner. myshell
+# is interactive by design, so this seeds every
 # recorded answer up front (see the install header's answers rule) to make
 # the run headless, runs bootstrap twice — fresh box, then idempotent
 # re-run — and asserts the results. Any prompt that slips through dies on

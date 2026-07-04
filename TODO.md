@@ -18,7 +18,7 @@ Completed work and resolved incidents are archived in [.archive/TODO-done.md](.a
 1. Ubuntu `command-not-found` data install (`sudo apt install command-not-found && sudo apt update`).
 1. Headless/non-interactive mode — `ask`/`confirm` need `/dev/tty`, so a tty-less run dies at the first question (via the ERR trap). `scripts/ci-roundtrip` pre-seeds `~/.local/state/myshell/*` and git identity (that is how CI runs headless); a `--yes`-style flag would be cleaner for humans.
 1. `myshell` dispatcher (`myshell update|sync|agents`) — deliberately deferred until a third user-facing verb exists; today `u` + re-running bootstrap cover the whole post-install surface.
-1. CI: set `MYSHELL_CI_AGENTS=claude` on one job to exercise the agent installers; a `macos-latest` job for the brew path.
+1. CI: set `MYSHELL_CI_AGENTS=claude` on one job to exercise the agent installers. (The `macos-latest` round-trip landed 2026-07-04 — experimental via `continue-on-error` until its first green, then flip it to blocking.)
 
 ## Known assumptions / risks
 
