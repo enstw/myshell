@@ -76,7 +76,7 @@ set -Eeuo pipefail
 #   user's decision and silently suppress the question forever (2026-07-04).
 #
 # - Failure policy: required tools abort the run via the ERR trap (brew/apt
-#   base packages, uv, starship, zinit, the eza/glow apt repos) — a shell
+#   base packages, uv, starship, zinit, the apt_keyring_repo repos) — a shell
 #   without them is broken anyway. Optional or self-healing steps fail soft
 #   (pnpm, bun, AI agents, fetched configs, tealdeer cache, fonts): a
 #   transient network blip must not kill a bootstrap halfway (2026-05-10).
@@ -191,7 +191,7 @@ sudo_work_pending() {
     if [[ "$OS" == ubuntu ]]; then
         local p
         [[ -n "$(apt_missing_pkgs)" ]] && return 0                      # install_apps_ubuntu
-        { command -v eza && command -v glow; } >/dev/null || return 0   # apt-repo setup under /etc
+        { command -v eza && command -v glow; } >/dev/null || return 0   # apt_keyring_repo (eza/glow)
         for p in "${UBUNTU_PURGE_PY_PKGS[@]}" "${UBUNTU_PURGE_NODE_PKGS[@]}"; do
             dpkg -s "$p" >/dev/null 2>&1 && return 0                    # purge_conflicts
         done
@@ -455,8 +455,10 @@ install_apps_ubuntu() {
     if [[ "$NO_SUDO" == "1" ]]; then
         warn "no sudo — skipping eza/glow (require apt-repo setup under /etc)"
     else
-        install_eza_ubuntu
-        install_glow_ubuntu
+        apt_keyring_repo gierens https://raw.githubusercontent.com/eza-community/eza/main/deb.asc \
+                         "http://deb.gierens.de stable main" eza
+        apt_keyring_repo charm https://repo.charm.sh/apt/gpg.key \
+                         "https://repo.charm.sh/apt/ * *" glow
     fi
 }
 
@@ -649,29 +651,26 @@ install_starship_ubuntu() {
     curl -sS https://starship.rs/install.sh | sh -s -- -y
 }
 
-install_eza_ubuntu() {
-    command -v eza >/dev/null && return 0
-    sublog "Installing eza (gierens apt repo)..."
+# apt_keyring_repo NAME KEY_URL REPO_SPEC PKG — check-first install of PKG from
+# a third-party apt repo: dearmor KEY_URL into /etc/apt/keyrings/NAME.gpg, write
+# "deb [signed-by=...] REPO_SPEC" to /etc/apt/sources.list.d/NAME.list, update,
+# install. REPO_SPEC is one argument, written verbatim (charm's is "URL * *").
+# Hard-fail via the ERR trap (header rule: these repos are required tools);
+# callers must sit behind the NO_SUDO guard. Idempotency keys on `command -v
+# PKG`, so converged re-runs never touch the network or /etc. gpg gets --yes:
+# a run interrupted between key-write and install must not wedge the re-run
+# on gpg's no-tty overwrite prompt.
+apt_keyring_repo() {
+    local name="$1" key_url="$2" repo_spec="$3" pkg="$4"
+    command -v "$pkg" >/dev/null && return 0
+    sublog "Installing $pkg ($name apt repo)..."
     $SUDO mkdir -p /etc/apt/keyrings
-    wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc \
-        | $SUDO gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
-    echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" \
-        | $SUDO tee /etc/apt/sources.list.d/gierens.list >/dev/null
-    $SUDO chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
+    curl -fsSL "$key_url" | $SUDO gpg --dearmor --yes -o "/etc/apt/keyrings/$name.gpg"
+    printf 'deb [signed-by=/etc/apt/keyrings/%s.gpg] %s\n' "$name" "$repo_spec" \
+        | $SUDO tee "/etc/apt/sources.list.d/$name.list" >/dev/null
+    $SUDO chmod 644 "/etc/apt/keyrings/$name.gpg" "/etc/apt/sources.list.d/$name.list"
     $SUDO apt-get update
-    $SUDO apt-get install -y eza
-}
-
-install_glow_ubuntu() {
-    command -v glow >/dev/null && return 0
-    sublog "Installing glow (charm apt repo)..."
-    $SUDO mkdir -p /etc/apt/keyrings
-    curl -fsSL https://repo.charm.sh/apt/gpg.key \
-        | $SUDO gpg --dearmor -o /etc/apt/keyrings/charm.gpg
-    echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" \
-        | $SUDO tee /etc/apt/sources.list.d/charm.list >/dev/null
-    $SUDO apt-get update
-    $SUDO apt-get install -y glow
+    $SUDO apt-get install -y "$pkg"
 }
 
 install_bun() {
