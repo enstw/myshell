@@ -35,8 +35,9 @@ set -Eeuo pipefail
 #   a one-OS step opens with a guard clause ([[ "$OS" == ubuntu ]] || return 0);
 #   a both-OS step whose branches stay under ~15 lines uses an inline
 #   `if [[ "$OS" == macos ]]`; only large parallel implementations get an
-#   _macos/_ubuntu pair behind a case dispatch (install_apps is the sole
-#   example today). Shared helpers exist where the RECIPE repeats, not the
+#   _macos/_ubuntu pair behind a case dispatch (install_apps,
+#   configure_terminal_profile). Shared helpers exist where the RECIPE
+#   repeats, not the
 #   verb: apt_keyring_repo (third-party apt repos), fetch_config (idempotent
 #   downloads), install_agent (fail-soft agent installers).
 #
@@ -1519,9 +1520,13 @@ install_fonts() {
 }
 
 configure_terminal_profile() {
-    if [[ "$OS" != macos ]]; then
-        return 0
-    fi
+    case "$OS" in
+        macos)  configure_terminal_profile_macos ;;
+        ubuntu) configure_terminal_profile_ubuntu ;;
+    esac
+}
+
+configure_terminal_profile_macos() {
     local profile_path="$REPO_ROOT/assets/tokyo-night.terminal"
     if [[ ! -f "$profile_path" ]]; then
         warn "Terminal profile $profile_path not found — skipping"
@@ -1542,6 +1547,66 @@ configure_terminal_profile() {
     sublog "Setting tokyo-night as default..."
     defaults write com.apple.Terminal "Default Window Settings" -string "tokyo-night"
     defaults write com.apple.Terminal "Startup Window Settings" -string "tokyo-night"
+}
+
+# GNOME Terminal has no profile-file import like Terminal.app — colors are
+# per-profile dconf keys under org.gnome.Terminal. Converge the colors of the
+# profile named "Pro" (any case; created as "Pro" if missing) to Tokyo Night:
+# background/foreground/palette/use-theme-colors only — font, size, and
+# transparency stay personal, per-machine settings the installer does not
+# own. Only a freshly created profile is made the default; an existing Pro
+# keeps whatever default arrangement the user has. Everything is per-user
+# dconf (no sudo). Headless boxes and the CI containers have no
+# gnome-terminal/gsettings and return silently, like a one-OS guard.
+configure_terminal_profile_ubuntu() {
+    { command -v gsettings && command -v gnome-terminal; } >/dev/null || return 0
+    log "Configuring GNOME Terminal profile Pro (Tokyo Night)..."
+    local base="/org/gnome/terminal/legacy/profiles:"
+    local bg="'#1a1b26'" fg="'#c0caf5'"
+    local palette="['#15161e', '#f7768e', '#9ece6a', '#e0af68', '#7aa2f7', '#bb9af7', '#7dcfff', '#a9b1d6', '#414868', '#f7768e', '#9ece6a', '#e0af68', '#7aa2f7', '#bb9af7', '#7dcfff', '#c0caf5']"
+    local list uuids=() u name target="" created=0
+    list=$(gsettings get org.gnome.Terminal.ProfilesList list 2>/dev/null || true)
+    list=${list#@as }                      # an empty list prints as "@as []"
+    read -ra uuids <<<"$(tr -d "[]'," <<<"$list")"
+    for u in "${uuids[@]}"; do
+        name=$(gsettings get "org.gnome.Terminal.Legacy.Profile:$base/:$u/" visible-name 2>/dev/null || true)
+        [[ "${name,,}" == "'pro'" ]] && { target="$u"; break; }
+    done
+    # Check-first: converged when Pro exists and already has our background.
+    if [[ -n "$target" ]] \
+       && [[ "$(gsettings get "org.gnome.Terminal.Legacy.Profile:$base/:$target/" use-theme-colors 2>/dev/null)" == false ]] \
+       && [[ "$(gsettings get "org.gnome.Terminal.Legacy.Profile:$base/:$target/" background-color 2>/dev/null)" == "$bg" ]]; then
+        sublog "already Tokyo Night — skipping"
+        return 0
+    fi
+    if [[ -z "$target" ]]; then
+        target=$(cat /proc/sys/kernel/random/uuid)   # uuidgen isn't in the base install
+        sublog "no Pro profile — creating one..."
+        local joined=""
+        for u in "${uuids[@]}" "$target"; do joined+="'$u', "; done
+        if ! gsettings set org.gnome.Terminal.ProfilesList list "[${joined%, }]" \
+           || ! gsettings set "org.gnome.Terminal.Legacy.Profile:$base/:$target/" visible-name "'Pro'" \
+           || ! gsettings set org.gnome.Terminal.ProfilesList default "'$target'"; then
+            warn "could not create the Pro profile (no session bus?) — skipping"
+            return 0
+        fi
+        created=1
+    fi
+    sublog "applying Tokyo Night colors..."
+    local pschema="org.gnome.Terminal.Legacy.Profile:$base/:$target/"
+    if ! { gsettings set "$pschema" use-theme-colors false \
+        && gsettings set "$pschema" foreground-color "$fg" \
+        && gsettings set "$pschema" background-color "$bg" \
+        && gsettings set "$pschema" bold-color-same-as-fg true \
+        && gsettings set "$pschema" palette "$palette"; }; then
+        warn "gsettings write failed — Tokyo Night colors not fully applied (re-run to retry)"
+        return 0
+    fi
+    if [[ "$created" == 1 ]]; then
+        sublog "Pro created with Tokyo Night colors and set as default"
+    else
+        sublog "Pro recolored to Tokyo Night"
+    fi
 }
 
 # Check the passwd entry, not $SHELL: the env var is frozen at session
