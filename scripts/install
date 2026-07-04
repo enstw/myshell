@@ -642,13 +642,13 @@ unminimize_ubuntu() {
 install_uv_ubuntu() {
     command -v uv >/dev/null && return 0
     sublog "Installing uv (astral.sh installer)..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
+    curl -fsSL https://astral.sh/uv/install.sh | sh
 }
 
 install_starship_ubuntu() {
     command -v starship >/dev/null && return 0
     sublog "Installing starship..."
-    curl -sS https://starship.rs/install.sh | sh -s -- -y
+    curl -fsSL https://starship.rs/install.sh | sh -s -- -y
 }
 
 # apt_keyring_repo NAME KEY_URL REPO_SPEC PKG — check-first install of PKG from
