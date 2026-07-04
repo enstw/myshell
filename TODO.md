@@ -7,7 +7,7 @@ Two-stage installer so a colleague runs one command on a bare Mac or minimal Ubu
 - `bootstrap` — POSIX-sh stage 1. Installs brew + bash 5 on macOS, refreshes apt on Ubuntu, then runs stage 2 (no `exec` — the cleanup trap must outlive it).
 - `scripts/install` — bash 5 stage 2. Self-documenting; cross-cutting rules live in its header banner.
 
-CI (GitHub Actions) runs `scripts/check` plus two headless container round-trips — sudo user and root, both in minimized `ubuntu:24.04`, fresh run + idempotent re-run, asserting zero warnings — on every push. **Green since 2026-07-04** (run 28699567420 was the first green in the workflow's history — every earlier run failed the zero-warning gate). **Not yet run end-to-end on a real bare Mac.**
+CI (GitHub Actions) runs `scripts/check` plus three headless round-trips — sudo user and root in minimized `ubuntu:24.04` containers, and a `macos-latest` runner leg — fresh run + idempotent re-run, asserting zero warnings, on every push. **Ubuntu green since 2026-07-04** (run 28699567420 was the first green in the workflow's history — every earlier run failed the zero-warning gate); **macOS green on its first attempt the same day** (run 28700816193), including first-ever real exercise of the purge paths (removed `brew:pipx`, `brew:node@24` from the runner image). **Not yet run end-to-end on a real bare Mac** (a runner is not bare, and the interactive prompt phase is untested).
 
 Completed work and resolved incidents are archived in [.archive/TODO-done.md](.archive/TODO-done.md) (and `git log`); current behavior is documented by the `scripts/install` header banner and `README.md`.
 
@@ -16,15 +16,16 @@ Completed work and resolved incidents are archived in [.archive/TODO-done.md](.a
 1. `yt-dlp` via `uv tool install`.
 1. Optional apps: quarto + TinyTeX, pandoc + xelatex, proxmark3, zed. (docker: done 2026-07-04 — Ubuntu `docker.io` + docker group; macOS colima + docker CLI formulae, `colima start` boots the daemon. Untested until the bare-Mac leg.) Pattern when these land: one `choose_optional_apps` menu recorded like the agents answer, per-app `install_` functions per the header's step grammar, `apt_keyring_repo` for any new third-party repos — no data-driven package table (that's the abandoned `.archive/setup.sh` design).
 1. Ubuntu `command-not-found` data install (`sudo apt install command-not-found && sudo apt update`).
-1. Headless/non-interactive mode — `ask`/`confirm` need `/dev/tty`, so a tty-less run dies at the first question (via the ERR trap). `scripts/ci-roundtrip` pre-seeds `~/.local/state/myshell/*` and git identity (that is how CI runs headless); a `--yes`-style flag would be cleaner for humans.
+1. Headless/non-interactive mode — largely settled 2026-07-04: pre-seeding the answer store + git identity is now the documented, supported interface (README "Headless / unattended" + the install header's answers rule; `scripts/ci-roundtrip` is the reference). A `--yes`-style flag that accepts every default remains optional sugar on top.
 1. `myshell` dispatcher (`myshell update|sync|agents`) — deliberately deferred until a third user-facing verb exists; today `u` + re-running bootstrap cover the whole post-install surface.
-1. CI: set `MYSHELL_CI_AGENTS=claude` on one job to exercise the agent installers. (The `macos-latest` round-trip landed 2026-07-04 — experimental via `continue-on-error` until its first green, then flip it to blocking.)
+1. CI: set `MYSHELL_CI_AGENTS=claude` on one job to exercise the agent installers. (The `macos-latest` round-trip landed 2026-07-04, went green on its first run, and now gates pushes like the Ubuntu legs.)
 
 ## Known assumptions / risks
 
 1. Ubuntu target is 22.04+ (package names like `bat`, `7zip`, `tealdeer`).
 1. `chsh` on macOS prompts for the user's login password; acceptable but unavoidable (it is the last step, so the unattended phase is not interrupted).
 1. Stage 1 still needs `apt-get update` to succeed; if a minimal image has no sources configured at all, it'll fail — haven't handled that case. (Missing-sudo on root is now handled via the `$SUDO` shim.)
+1. `configure_terminal_profile`'s check-first guard (`defaults read com.apple.Terminal`) did not hold on the macOS CI runner — the re-run re-opened Terminal and re-wrote the default (run 28700816193; no warning, so the gate still passed). Unverified whether a real Mac behaves the same; investigate before trusting that step's idempotency.
 
 ## How to resume / test
 

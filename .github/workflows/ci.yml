@@ -52,12 +52,9 @@ jobs:
   # preinstalled) — which is the point: the brew and purge paths get real
   # exercise the fresh Ubuntu containers can't give them. The interactive
   # prompt phase and a true bare-Mac fresh install remain untested (TODO).
-  # Experimental: continue-on-error until its first green, then remove that
-  # line so it gates pushes like the Ubuntu legs.
   roundtrip-macos:
     runs-on: macos-latest
     timeout-minutes: 45
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: bootstrap on a macos-latest runner
