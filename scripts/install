@@ -71,6 +71,9 @@ set -Eeuo pipefail
 #   and the long package phase runs unattended (chsh may still ask for a
 #   password at the very end). Delete a state file to be asked again.
 #   Headless runs: pre-seed the state files and git identity beforehand.
+#   When a prompt cannot be read (no tty), ask/confirm die instead of
+#   fabricating an answer — a fabricated answer would get RECORDED as the
+#   user's decision and silently suppress the question forever (2026-07-04).
 #
 # - Failure policy: required tools abort the run via the ERR trap (brew/apt
 #   base packages, uv, starship, zinit, the eza/glow apt repos) — a shell
@@ -115,7 +118,9 @@ mkdir -p "$PNPM_HOME"
 export PATH="$PNPM_HOME/bin:$PNPM_HOME:$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 # Recorded interactive answers live here (see the header rule): one file per
-# question, written by the choose_* helpers, honored on every re-run.
+# question, written by the choose_* helpers, honored on every re-run. One
+# non-answer file also lives here: apt-sudoers.applied, a user-readable mirror
+# of the root-only sudoers drop-in so currency checks stay sudo-free.
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/myshell"
 
 # Output vocabulary (see the header rule) — deliberately duplicated
@@ -149,36 +154,59 @@ else
 fi
 
 # ask PROMPT [DEFAULT] — read a line from tty, echo answer (or default if empty).
+# A failed read (no tty / EOF) dies instead of falling through: the output of
+# ask gets recorded as the user's decision, and a fabricated answer would
+# suppress the question on every future run (see the header's answers rule).
+# die inside $(...) only exits the subshell, so callers must capture ask with
+# a direct assignment — never nested inside another substitution, where the
+# failure status is swallowed and "" looks like a real answer.
 ask() {
-    local prompt="$1" default="${2:-}" reply
-    if [[ -n "$default" ]]; then
-        read -rp "$prompt [$default] " reply </dev/tty
-    else
-        read -rp "$prompt " reply </dev/tty
-    fi
+    local prompt="$1" default="${2:-}" suffix="" reply
+    [[ -n "$default" ]] && suffix=" [$default]"
+    read -rp "$prompt$suffix " reply </dev/tty \
+        || die "cannot read '$prompt' from the terminal — run interactively, or pre-seed the answer (see the header's answers rule)"
     printf '%s\n' "${reply:-$default}"
 }
 
 # confirm PROMPT — returns 0 if user answers y/Y, 1 otherwise. Default No.
+# Same no-tty policy as ask: die rather than silently recording a "no".
 confirm() {
     local reply
-    read -rp "$1 [y/N] " reply </dev/tty
+    read -rp "$1 [y/N] " reply </dev/tty \
+        || die "cannot read '$1' from the terminal — run interactively, or pre-seed the answer (see the header's answers rule)"
     [[ "$reply" =~ ^[Yy] ]]
 }
 
 # True when a system-level (sudo) step will actually run this round, so a quiet
-# re-run with nothing to do never prompts for a password. Mirrors the guards in
-# configure_timezone / set_login_shell so the prediction can't drift into a
-# surprise mid-run prompt: apt always needs root; on macOS only a timezone
-# change or a missing /etc/shells entry do (brew installs need no sudo).
+# re-run with nothing to do never prompts for a password. Mirrors the guards of
+# every step that uses $SUDO — through shared helpers (apt_missing_pkgs,
+# apt_sudoers_pending, locale_configured, ubuntu_timezone) wherever the guard
+# is non-trivial — so the prediction can't drift into a surprise mid-run
+# prompt. On macOS only a timezone change or a missing /etc/shells entry needs
+# sudo (brew installs don't); on Ubuntu each check below names the step it
+# predicts. A converged Ubuntu box must fall through to "no work": prompting
+# for a password on a re-run that then changes nothing is a bug (2026-07-04).
 sudo_work_pending() {
     [[ -n "$SUDO" ]] || return 1
-    [[ "$OS" == ubuntu ]] && return 0
-    local tz zsh_path
-    tz=$(readlink /etc/localtime 2>/dev/null || true)
-    [[ "${tz#*/zoneinfo/}" != Asia/Taipei ]] && return 0
+    if [[ "$OS" == ubuntu ]]; then
+        local p
+        [[ -n "$(apt_missing_pkgs)" ]] && return 0                      # install_apps_ubuntu
+        { command -v eza && command -v glow; } >/dev/null || return 0   # apt-repo setup under /etc
+        for p in "${UBUNTU_PURGE_PY_PKGS[@]}" "${UBUNTU_PURGE_NODE_PKGS[@]}"; do
+            dpkg -s "$p" >/dev/null 2>&1 && return 0                    # purge_conflicts
+        done
+        apt_sudoers_pending && return 0                                 # configure_apt_sudoers
+        [[ -f /etc/dpkg/dpkg.cfg.d/excludes ]] && return 0              # unminimize_ubuntu
+        locale_configured || return 0                                   # configure_locale
+        [[ "$(ubuntu_timezone)" == Asia/Taipei ]] || return 0           # configure_timezone
+    else
+        local tz
+        tz=$(readlink /etc/localtime 2>/dev/null || true)
+        [[ "${tz#*/zoneinfo/}" != Asia/Taipei ]] && return 0            # configure_timezone
+    fi
+    local zsh_path
     zsh_path=$(command -v zsh || true)
-    [[ -n "$zsh_path" ]] && ! grep -qx "$zsh_path" /etc/shells 2>/dev/null && return 0
+    [[ -n "$zsh_path" ]] && ! grep -qx "$zsh_path" /etc/shells 2>/dev/null && return 0  # set_login_shell
     return 1
 }
 
@@ -219,8 +247,14 @@ choose_agents() {
     [[ -f "$STATE_DIR/agents" ]] && return 0
     sublog "AI agents — pick numbers, comma-separated: 0 none, 1 Claude Code, 2 Codex, 3 OpenCode, 4 agy, 5 all."
     sublog "Names work too: all, none, or e.g. claude,opencode."
-    local selected
-    selected=$(normalize_agent_choice "$(ask "Install which agents?" "1,2")")
+    # Two assignments, not one nested substitution: if ask dies (no tty), a
+    # direct `raw=$(ask ...)` fails the assignment and set -e aborts the run.
+    # Nested inside normalize_agent_choice's arguments, the failure would be
+    # swallowed and "" recorded as a real "none" answer — which is exactly how
+    # a headless run silently disabled this question on 2026-07-04.
+    local raw selected
+    raw=$(ask "Install which agents?" "1,2")
+    selected=$(normalize_agent_choice "$raw")
     mkdir -p "$STATE_DIR"
     printf '%s\n' "$selected" >"$STATE_DIR/agents"
     sublog "choice recorded (${selected:-none}) — rm $STATE_DIR/agents to change it"
@@ -349,24 +383,40 @@ install_apps_macos() {
     brew postinstall ca-certificates >/dev/null 2>&1 || true
 }
 
+# Ubuntu package lists — top-level so sudo_work_pending can predict from the
+# same data the steps act on (see its header comment).
+#
+# Base apt packages installed by install_apps_ubuntu. unzip is required by the
+# bun.sh installer (it errors "unzip is required to install bun" otherwise);
+# without it install_bun fails soft on minimal Ubuntu and the gstack skill
+# loses its bun runtime.
+UBUNTU_BASE_PKGS=(
+    git zsh jq tmux fzf ripgrep 7zip curl ca-certificates
+    bat fd-find zoxide tealdeer qrencode build-essential wget gpg
+    age unzip locales tzdata
+)
+# apt packages purge_conflicts removes on sight (see the header's uv/pnpm rules).
+UBUNTU_PURGE_PY_PKGS=(pipx python3-poetry pyenv)
+UBUNTU_PURGE_NODE_PKGS=(nodejs npm yarn yarnpkg fnm)
+
+# Echo the base apt packages dpkg lacks, space-separated (empty when none).
+# Shared by install_apps_ubuntu and sudo_work_pending.
+apt_missing_pkgs() {
+    local missing=() p
+    for p in "${UBUNTU_BASE_PKGS[@]}"; do
+        dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p")
+    done
+    echo "${missing[*]-}"
+}
+
 install_apps_ubuntu() {
     if [[ "$NO_SUDO" == "1" ]]; then
         warn "no sudo — skipping apt installs; system packages assumed pre-installed via root"
     else
         # Check-first: apt-get install -y is idempotent but slow when invoked
         # for already-present packages — only ask it for what dpkg lacks.
-        # unzip is required by the bun.sh installer (it errors "unzip is
-        # required to install bun" otherwise); without it install_bun fails
-        # soft on minimal Ubuntu and the gstack skill loses its bun runtime.
-        local pkgs=(
-            git zsh jq tmux fzf ripgrep 7zip curl ca-certificates
-            bat fd-find zoxide tealdeer qrencode build-essential wget gpg
-            age unzip locales tzdata
-        )
-        local missing=() p
-        for p in "${pkgs[@]}"; do
-            dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p")
-        done
+        local missing=()
+        read -r -a missing <<<"$(apt_missing_pkgs)"
         if [[ ${#missing[@]} -eq 0 ]]; then
             sublog "apt base packages already installed — skipping"
         else
@@ -397,6 +447,31 @@ install_apps_ubuntu() {
     fi
 }
 
+# The sudoers drop-in content, rendered for the current user. Single source
+# for configure_apt_sudoers (render + install) and apt_sudoers_pending
+# (currency check against the mirror).
+apt_sudoers_content() {
+    local me
+    me=$(id -un)
+    printf '%s\n' "# Generated by myshell/scripts/install — do not hand-edit (rewritten whenever
+# it drifts from the installer's template). Lets '$me' run the
+# package-management commands that myshell-update (the \`u\` alias) and this
+# installer use, without a password.
+$me ALL=(root) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get, /usr/bin/snap"
+}
+
+# True when configure_apt_sudoers will need root this round. Deliberately
+# sudo-free (called by sudo_work_pending before any password prompt): the
+# drop-in is 0440 root:root, so currency is judged against the mirror copy
+# recorded at install time. Drop-in present but no mirror (it predates the
+# mirror mechanism): treat as current — configure_apt_sudoers backfills the
+# mirror opportunistically when sudo is warm for other reasons.
+apt_sudoers_pending() {
+    [[ -f /etc/sudoers.d/50-myshell-apt ]] || return 0
+    [[ -f "$STATE_DIR/apt-sudoers.applied" ]] || return 1
+    ! cmp -s <(apt_sudoers_content) "$STATE_DIR/apt-sudoers.applied"
+}
+
 # Passwordless apt/snap for updates. The `u` alias (myshell-update) runs apt
 # update/upgrade/autoremove and snap refresh but — unlike this installer — never
 # pre-warms sudo (warm_sudo lives only here), so every `u` otherwise blocks on a
@@ -412,27 +487,52 @@ install_apps_ubuntu() {
 #
 # Safe-write: a syntax error anywhere in /etc/sudoers.d can lock out sudo
 # entirely, so render to a temp file, validate with `visudo -cf`, and only then
-# install it atomically as 0440 root:root. Idempotent: skip when the live file
-# already matches (sudo is pre-warmed on Ubuntu, so the compare adds no prompt).
+# install it atomically as 0440 root:root.
+#
+# Idempotency is sudo-free: the drop-in itself is root-only, so re-runs judge
+# currency against $STATE_DIR/apt-sudoers.applied — a user-readable mirror of
+# what this installer last wrote. Comparing via `$SUDO cmp` instead would make
+# every converged re-run prompt for a password just to confirm there is
+# nothing to do (the 2026-07-04 bug sudo_work_pending now guards against).
 configure_apt_sudoers() {
     [[ "$OS" == ubuntu ]] || return 0
     local sudoers_file="/etc/sudoers.d/50-myshell-apt"
+    local mirror="$STATE_DIR/apt-sudoers.applied"
     log "Configuring passwordless apt/snap for 'u' updates ($sudoers_file)..."
     if [[ "$NO_SUDO" == 1 ]]; then
         warn "no sudo — skipping $sudoers_file; ask root to install it for passwordless updates"
         return 0
     fi
-    local visudo_bin tmp me content
+    local content
+    content=$(apt_sudoers_content)
+    if ! apt_sudoers_pending; then
+        if [[ -f "$mirror" ]]; then
+            sublog "$sudoers_file already current — skipping"
+            return 0
+        fi
+        # Drop-in predates the mirror (installed by an older version of this
+        # script). Never prompt for a password just to re-verify a root-only
+        # file that only we write — but when root is already available (running
+        # as root, or sudo warmed by some other step), verify the live file and
+        # backfill the mirror so future template changes are detected sudo-free.
+        if [[ -n "$SUDO" ]] && ! $SUDO -n true 2>/dev/null; then
+            sublog "$sudoers_file present — assuming current (mirror backfills on the next sudo-warm run)"
+            return 0
+        fi
+        if $SUDO cmp -s <(printf '%s\n' "$content") "$sudoers_file"; then
+            mkdir -p "$STATE_DIR"
+            printf '%s\n' "$content" >"$mirror"
+            sublog "$sudoers_file verified current — mirror recorded for sudo-free re-runs"
+            return 0
+        fi
+        # Live file differs from the template — fall through and reinstall.
+    fi
+    local visudo_bin tmp
     visudo_bin=$(command -v visudo 2>/dev/null || echo /usr/sbin/visudo)
     if [[ ! -x "$visudo_bin" ]]; then
         warn "visudo not found — skipping $sudoers_file (cannot validate safely)"
         return 0
     fi
-    me=$(id -un)
-    content="# Generated by myshell/scripts/install — do not hand-edit (rewritten on every
-# bootstrap run). Lets '$me' run the package-management commands that
-# myshell-update (the \`u\` alias) and this installer use, without a password.
-$me ALL=(root) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get, /usr/bin/snap"
     tmp=$(mktemp)
     printf '%s\n' "$content" >"$tmp"
     chmod 0440 "$tmp"
@@ -441,15 +541,10 @@ $me ALL=(root) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get, /usr/bin/snap"
         warn "generated sudoers failed visudo validation — not installing $sudoers_file"
         return 0
     fi
-    # Pre-warmed on Ubuntu, so this compare doesn't prompt; it skips the write
-    # (and its sudo) on a re-run where the file is already current.
-    if $SUDO cmp -s "$tmp" "$sudoers_file" 2>/dev/null; then
-        rm -f "$tmp"
-        sublog "$sudoers_file already current — skipping"
-        return 0
-    fi
     $SUDO install -m 0440 -o root -g root "$tmp" "$sudoers_file"
     rm -f "$tmp"
+    mkdir -p "$STATE_DIR"
+    printf '%s\n' "$content" >"$mirror"
     sublog "installed $sudoers_file"
 }
 
@@ -584,7 +679,7 @@ purge_non_uv_python() {
             fi
         done
     elif [[ "$NO_SUDO" != 1 ]]; then
-        for p in pipx python3-poetry pyenv; do
+        for p in "${UBUNTU_PURGE_PY_PKGS[@]}"; do
             dpkg -s "$p" >/dev/null 2>&1 || continue
             if $SUDO apt-get purge -y "$p" >/dev/null 2>&1; then
                 removed+=("apt:$p")
@@ -634,7 +729,7 @@ purge_non_pnpm_node() {
             fi
         done
     elif [[ "$NO_SUDO" != 1 ]]; then
-        for p in nodejs npm yarn yarnpkg fnm; do
+        for p in "${UBUNTU_PURGE_NODE_PKGS[@]}"; do
             dpkg -s "$p" >/dev/null 2>&1 || continue
             if $SUDO apt-get purge -y "$p" >/dev/null 2>&1; then
                 removed+=("apt:$p")
@@ -959,6 +1054,19 @@ configure_git() {
     sublog "$GIT_NAME <$GIT_EMAIL>"
 }
 
+# True when the three locales are compiled and the system default targets
+# zh_TW. Shared by configure_locale (its skip guard) and sudo_work_pending
+# (predicting whether locale-gen will need root). `locale -a` normalizes
+# names (e.g. en_US.utf8), so match dash/case-insensitively.
+locale_configured() {
+    local have
+    have=$(locale -a 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -d '-')
+    grep -qx 'en_us.utf8' <<<"$have" \
+        && grep -qx 'en_gb.utf8' <<<"$have" \
+        && grep -qx 'zh_tw.utf8' <<<"$have" \
+        && grep -q '^LANG=zh_TW.UTF-8' /etc/default/locale 2>/dev/null
+}
+
 configure_locale() {
     if [[ "$OS" != ubuntu ]]; then
         log "Locale generation..."
@@ -971,15 +1079,8 @@ configure_locale() {
         return 0
     fi
     log "Generating locales (en_US, en_GB, zh_TW — .UTF-8)..."
-    # Idempotency: skip the slow sudo locale-gen/update-locale when the three
-    # locales are already compiled and the system default already targets zh_TW.
-    # `locale -a` normalizes names (e.g. en_US.utf8), so match dash/case-insensitively.
-    local have
-    have=$(locale -a 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -d '-')
-    if grep -qx 'en_us.utf8' <<<"$have" \
-       && grep -qx 'en_gb.utf8' <<<"$have" \
-       && grep -qx 'zh_tw.utf8' <<<"$have" \
-       && grep -q '^LANG=zh_TW.UTF-8' /etc/default/locale 2>/dev/null; then
+    # Idempotency: skip the slow sudo locale-gen/update-locale when already done.
+    if locale_configured; then
         sublog "already generated and default set to zh_TW.UTF-8 — skipping"
         return 0
     fi
@@ -990,6 +1091,17 @@ configure_locale() {
     $SUDO locale-gen en_US.UTF-8 en_GB.UTF-8 zh_TW.UTF-8 >/dev/null
     $SUDO update-locale LANG=zh_TW.UTF-8 LANGUAGE=zh_TW:en >/dev/null
     sublog "default LANG=zh_TW.UTF-8 LANGUAGE=zh_TW:en"
+}
+
+# Current timezone on Ubuntu, read without sudo: timedatectl when usable
+# (systemd), else the container path (/etc/timezone). Shared by
+# configure_timezone (its skip guard) and sudo_work_pending (prediction).
+ubuntu_timezone() {
+    if command -v timedatectl >/dev/null && timedatectl status >/dev/null 2>&1; then
+        timedatectl show --property=Timezone --value 2>/dev/null || true
+    else
+        cat /etc/timezone 2>/dev/null || true
+    fi
 }
 
 configure_timezone() {
@@ -1011,22 +1123,19 @@ configure_timezone() {
             return 0
         fi
         $SUDO systemsetup -settimezone "$target" >/dev/null
-    elif command -v timedatectl >/dev/null && timedatectl status >/dev/null 2>&1; then
-        current=$(timedatectl show --property=Timezone --value 2>/dev/null || true)
-        if [[ "$current" == "$target" ]]; then
-            sublog "already $target"
-            return 0
-        fi
-        $SUDO timedatectl set-timezone "$target"
     else
-        # Container / no systemd: write /etc/timezone + relink /etc/localtime.
-        current=$(cat /etc/timezone 2>/dev/null || true)
+        current=$(ubuntu_timezone)
         if [[ "$current" == "$target" ]]; then
             sublog "already $target"
             return 0
         fi
-        echo "$target" | $SUDO tee /etc/timezone >/dev/null
-        $SUDO ln -sf "/usr/share/zoneinfo/$target" /etc/localtime
+        if command -v timedatectl >/dev/null && timedatectl status >/dev/null 2>&1; then
+            $SUDO timedatectl set-timezone "$target"
+        else
+            # Container / no systemd: write /etc/timezone + relink /etc/localtime.
+            echo "$target" | $SUDO tee /etc/timezone >/dev/null
+            $SUDO ln -sf "/usr/share/zoneinfo/$target" /etc/localtime
+        fi
     fi
     sublog "set to $target"
 }

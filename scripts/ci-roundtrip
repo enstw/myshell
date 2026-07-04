@@ -47,4 +47,32 @@ command -v zsh >/dev/null || fail "zsh missing"
 
 run_bootstrap rerun
 
+# Regression (2026-07-04): a converged box must not pre-warm sudo — the rerun
+# has nothing system-level left to do, so sudo_work_pending must predict "no
+# work" and skip the password prompt. Only observable when running as a
+# non-root sudoer (as root the whole warm_sudo path is skipped anyway).
+if [[ $EUID -ne 0 ]] && command -v sudo >/dev/null; then
+    grep -q 'no system-level changes pending — skipping sudo pre-auth' /tmp/ci-rerun-out.log \
+        || fail "rerun pre-warmed sudo: sudo_work_pending predicted work on a converged box"
+fi
+
+# Regression (2026-07-04): an unanswered question in a headless run must abort
+# loudly — never record a fabricated answer. Only meaningful without a tty
+# (in a terminal the prompt would just wait for input, so skip it there).
+if ! ( : </dev/tty ) 2>/dev/null; then
+    echo "=== bootstrap: no-answer (must abort) ==="
+    rm -f "$HOME/.local/state/myshell/agents"
+    if "$REPO_ROOT/bootstrap" >/tmp/ci-noanswer-out.log 2>/tmp/ci-noanswer-err.log; then
+        cat /tmp/ci-noanswer-out.log; cat /tmp/ci-noanswer-err.log >&2
+        fail "headless run with an unanswered question should exit nonzero"
+    fi
+    grep -q 'cannot read' /tmp/ci-noanswer-err.log \
+        || { cat /tmp/ci-noanswer-err.log >&2; fail "expected a clear cannot-read-terminal error"; }
+    [[ ! -f "$HOME/.local/state/myshell/agents" ]] \
+        || fail "aborted run recorded an answer it never asked"
+    printf '%s\n' "${MYSHELL_CI_AGENTS:-}" >"$HOME/.local/state/myshell/agents"
+else
+    echo "skipping no-answer test (a tty is attached — the prompt would block)"
+fi
+
 echo "CI round-trip OK"
