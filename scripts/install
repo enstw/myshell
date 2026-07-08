@@ -1396,7 +1396,7 @@ install_codex() {
         return 0
     fi
     sublog "OpenAI installer (https://chatgpt.com/codex/install.sh)"
-    curl -fsSL https://chatgpt.com/codex/install.sh | sh
+    curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
 }
 
 configure_tealdeer() {
@@ -1695,4 +1695,3 @@ main() {
 }
 
 main "$@"
-
