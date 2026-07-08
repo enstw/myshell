@@ -59,8 +59,7 @@ set -Eeuo pipefail
 #   CLI) — and the normalized answer is recorded in
 #   ~/.local/state/myshell/agents so re-runs honor it (including "none")
 #   instead of re-asking; delete the file to choose again. Codex installs via
-#   `pnpm add -g` into $PNPM_HOME (static binary, no self-updater, so
-#   `pnpm update -g` is its update path). Claude Code, OpenCode, and agy are
+#   OpenAI's official install script. Claude Code, OpenCode, and agy are
 #   standalone self-updating binaries, NOT pnpm-managed (see the bun note):
 #   their own updaters would fight a package manager, and $PNPM_HOME precedes
 #   ~/.local/bin in PATH so a stale pnpm copy would shadow them. claude and
@@ -395,7 +394,7 @@ install_pnpm() {
     if ! curl -fsSL https://get.pnpm.io/install.sh | SHELL="${SHELL:-$(command -v bash)}" sh -; then
         sublog "pnpm installer failed — retrying once..."
         if ! curl -fsSL https://get.pnpm.io/install.sh | SHELL="${SHELL:-$(command -v bash)}" sh -; then
-            warn "pnpm install failed; continuing (node/Codex steps will skip)"
+            warn "pnpm install failed; continuing (node setup will skip)"
             return 0
         fi
     fi
@@ -847,17 +846,21 @@ purge_non_pnpm_node() {
             warn "rm asdf nodejs plugin failed"
         fi
     fi
-    # npm globals outside pnpm's prefix fall into three buckets:
+    # npm globals outside pnpm prefix fall into three buckets:
     #   1. Agent packages myshell used to drop under an npm global prefix but
-    #      now manages elsewhere — Claude Code and agy are native, Codex is
-    #      pnpm, and the Gemini CLI is retired (agy replaced it). Ours to remove
-    #      wherever they linger; their bin shims go when ~/.npm-global is nuked.
+    #      now manages elsewhere: Claude Code and agy are native, and the
+    #      Gemini CLI is retired (agy replaced it). Ours to remove wherever they
+    #      linger; their bin shims go when ~/.npm-global is nuked. Codex is
+    #      different: if selected, remove the legacy npm copy so the official
+    #      installer below owns the command; otherwise leave a user-installed
+    #      `codex` alone.
     #   2. The node toolchain itself (npm/npx/corepack) orphaned in a brew root
     #      with no `node` formula owning it — pure cruft under pnpm-only.
     #   3. Anything else — possibly load-bearing CLIs the user installed years
     #      ago. Warn, never delete.
-    local g root pkg
-    local stale_pkgs=(@anthropic-ai/claude-code @openai/codex @google/gemini-cli)
+    local g root pkg selected_agents
+    local stale_pkgs=(@anthropic-ai/claude-code @google/gemini-cli)
+    selected_agents=$(cat "$STATE_DIR/agents" 2>/dev/null || true)
     local brew_node_gone=0
     [[ "$OS" == macos ]] && ! brew list --formula node >/dev/null 2>&1 && brew_node_gone=1
     for root in /usr/local /opt/homebrew "$HOME/.npm-global"; do
@@ -868,6 +871,11 @@ purge_non_pnpm_node() {
                 && removed+=("npm:$pkg") \
                 || warn "rm $root/lib/node_modules/$pkg failed"
         done
+        if [[ ",$selected_agents," == *,codex,* && -e "$root/lib/node_modules/@openai/codex" ]]; then
+            rm -rf "$root/lib/node_modules/@openai/codex" \
+                && removed+=("npm:@openai/codex") \
+                || warn "rm $root/lib/node_modules/@openai/codex failed"
+        fi
         # Orphaned toolchain only in brew roots, and only when no brew node owns it.
         if [[ "$brew_node_gone" == 1 && "$root" != "$HOME/.npm-global" ]]; then
             for pkg in npm npx corepack; do
@@ -1252,13 +1260,13 @@ setup_pnpm() {
         sublog "Node already provisioned ($(node --version)) — skipping; 'u' refreshes LTS"
         return 0
     fi
-    # pnpm supplies the Node runtime that pnpm-global JS packages (Codex's
-    # npm launcher) and general dev work need; this also lands node/npm/npx
-    # symlinks in pnpm's global bin dir (already on PATH).
+    # pnpm supplies the Node runtime for general dev work and pnpm-global
+    # packages; this also lands node/npm/npx symlinks in pnpm's global
+    # bin dir (already on PATH).
     if pnpm runtime set node lts -g; then
         sublog "Node LTS active ($(node --version 2>/dev/null || echo 'pending new shell'))"
     else
-        warn "pnpm runtime set node lts failed; Codex may lack a node runtime"
+        warn "pnpm runtime set node lts failed"
     fi
 }
 
@@ -1348,10 +1356,6 @@ install_agy() {
     curl -fsSL https://antigravity.google/cli/install.sh | bash
 }
 
-npm_registry_ok() {
-    sublog "checking npm registry reachability (registry.npmjs.org)"
-    curl -fsSI https://registry.npmjs.org/ >/dev/null 2>&1
-}
 
 install_agent() {
     local label="$1"
@@ -1384,22 +1388,15 @@ install_claude_code() {
 }
 
 install_codex() {
-    # Codex — a static binary delivered through npm with no self-updater, so
-    # the pnpm global set is the right home (`pnpm update -g` in
-    # myshell-update is its update path). The registry probe lives here, next
-    # to the only agent that needs the npm registry.
+    # Codex — install through the official OpenAI script, not npm/pnpm. The same
+    # script is safe to rerun and is also used by myshell-update for upgrades.
     log "Installing OpenAI Codex CLI..."
-    if pnpm ls -g --depth=0 2>/dev/null | grep -q '@openai/codex'; then
-        sublog "already installed (pnpm global) — skipping"
+    if command -v codex >/dev/null 2>&1 && codex --version >/dev/null 2>&1; then
+        sublog "already installed ($(command -v codex)) — skipping; u updates it"
         return 0
     fi
-    command -v pnpm >/dev/null || { warn "pnpm not found — skipping (Codex installs via pnpm)"; return 0; }
-    if ! npm_registry_ok; then
-        warn "cannot reach the npm registry; retry later with: pnpm add -g @openai/codex"
-        return 0
-    fi
-    sublog "pnpm add -g @openai/codex"
-    pnpm add -g @openai/codex
+    sublog "OpenAI installer (https://chatgpt.com/codex/install.sh)"
+    curl -fsSL https://chatgpt.com/codex/install.sh | sh
 }
 
 configure_tealdeer() {

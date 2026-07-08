@@ -73,8 +73,8 @@ if [[ -f "$ZINIT_HOME/zinit.zsh" ]]; then
     zsh -ic 'zinit self-update; zinit update --all' || warn "zinit update failed"
 fi
 
-# pnpm — refresh the Node LTS runtime and update global packages (Codex lives
-# here; the self-updating agents are below).
+# pnpm — refresh the Node LTS runtime and update global packages.
+# Agent updates are handled in their own sections below.
 #
 # No `pnpm self-update` on purpose. For the standalone @pnpm/exe (SEA) build it
 # installs the new pnpm from a freshly-mktemp'd dir and records it as a LINKED
@@ -109,6 +109,13 @@ if command -v pnpm &>/dev/null; then
             curl -fsSL https://get.pnpm.io/install.sh | sh - || warn "pnpm reinstall failed"
         fi
     fi
+fi
+
+# Codex — official OpenAI installer. Rerun only when Codex is already present;
+# the installer handles install/upgrade in place and repairs a stale shim.
+if command -v codex &>/dev/null; then
+    log "Updating OpenAI Codex CLI..."
+    curl -fsSL https://chatgpt.com/codex/install.sh | sh || warn "Codex update failed"
 fi
 
 # Claude Code — native install (~/.local/bin), self-updates via its own command.
