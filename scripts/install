@@ -1270,6 +1270,28 @@ setup_pnpm() {
     fi
 }
 
+configure_pnpm() {
+    # Dependency build scripts (postinstall etc.) are the npm supply-chain
+    # attack vector: a malicious package's script runs with full user access
+    # and can exfiltrate `gh auth token`, ~/.ssh, dotfile secrets. pnpm ≥11
+    # already fails hard on unapproved build scripts; pinning strict-dep-builds
+    # upgrades a surviving pnpm 10 (which skips them only SILENTLY — install_pnpm
+    # keeps an existing pnpm) and holds the line if the upstream default flips.
+    # Approve intentional builds per-project with `pnpm approve-builds`
+    # (2026-07-25).
+    command -v pnpm >/dev/null || return 0    # setup_pnpm already warned
+    log "Configuring pnpm build-script policy..."
+    if [[ "$(pnpm config get strict-dep-builds 2>/dev/null)" == "true" ]]; then
+        sublog "strict-dep-builds already pinned — skipping"
+        return 0
+    fi
+    if pnpm config set --global strict-dep-builds true; then
+        sublog "strict-dep-builds pinned (unapproved dependency build scripts fail the install)"
+    else
+        warn "pnpm config set strict-dep-builds failed"
+    fi
+}
+
 # normalize_agent_choice RAW — echo the canonical comma-separated agent list
 # (subset of claude,codex,opencode,agy) for a menu answer of numbers and/or
 # names. Unknown tokens warn (stderr — stdout is captured by the caller) and
@@ -1682,6 +1704,7 @@ main() {
     configure_git
     configure_timezone
     setup_pnpm
+    configure_pnpm
     install_agents
     configure_tealdeer
     install_fonts

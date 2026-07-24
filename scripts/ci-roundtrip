@@ -43,6 +43,10 @@ run_bootstrap fresh
 [[ -d "$HOME/.local/share/zinit/zinit.git" ]] || fail "zinit missing"
 [[ -x "$HOME/.local/share/pnpm/bin/pnpm" || -x "$HOME/.local/share/pnpm/pnpm" ]] \
     || fail "standalone pnpm missing"
+pnpm_bin="$HOME/.local/share/pnpm/bin/pnpm"
+[[ -x "$pnpm_bin" ]] || pnpm_bin="$HOME/.local/share/pnpm/pnpm"
+[[ "$("$pnpm_bin" config get strict-dep-builds 2>/dev/null)" == "true" ]] \
+    || fail "pnpm strict-dep-builds not pinned"
 command -v zsh >/dev/null || fail "zsh missing"
 [[ ! -f /etc/dpkg/dpkg.cfg.d/excludes ]] || fail "system still minimized (unminimize did not run)"
 
