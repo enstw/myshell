@@ -1107,6 +1107,9 @@ deploy_scripts() {
     # Namespaced name (not ~/bin/update) so we don't clobber whatever
     # personal `update` script the user might already have in ~/bin.
     # The `u` alias in ~/.zsh/aliases.zsh is the user-facing interface.
+    # Remove first: if a manual setup symlinked this into ~/bin, cp would
+    # refuse to copy the repo script onto itself through the link.
+    rm -f "$HOME/bin/myshell-update"
     cp "$REPO_ROOT/scripts/myshell-update" "$HOME/bin/myshell-update"
     chmod +x "$HOME/bin/myshell-update"
 
