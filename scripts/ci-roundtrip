@@ -48,6 +48,7 @@ pnpm_bin="$HOME/.local/share/pnpm/bin/pnpm"
 [[ "$("$pnpm_bin" config get strict-dep-builds 2>/dev/null)" == "true" ]] \
     || fail "pnpm strict-dep-builds not pinned"
 command -v zsh >/dev/null || fail "zsh missing"
+[[ -x "$HOME/.local/bin/codegraph" ]] || fail "codegraph missing"
 [[ ! -f /etc/dpkg/dpkg.cfg.d/excludes ]] || fail "system still minimized (unminimize did not run)"
 
 run_bootstrap rerun

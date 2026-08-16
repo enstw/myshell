@@ -136,6 +136,12 @@ if command -v agy &>/dev/null; then
     agy update || warn "agy update failed"
 fi
 
+# CodeGraph — standalone bundle (~/.codegraph), self-updates via its own command.
+if command -v codegraph &>/dev/null; then
+    log "Upgrading CodeGraph..."
+    codegraph upgrade || warn "CodeGraph upgrade failed"
+fi
+
 # Claude Code gstack skill — use the skill's own updater (same as /gstack-upgrade).
 if [[ -x "$HOME/.claude/skills/gstack/bin/gstack-update-check" ]]; then
     log "Updating Claude gstack skill..."

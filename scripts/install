@@ -1424,6 +1424,26 @@ install_codex() {
     curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
 }
 
+install_codegraph() {
+    # CodeGraph — pre-indexed local code knowledge graph consumed by the AI
+    # agents above (Claude Code, Codex, OpenCode, agy, ...). Not itself an
+    # agent, so it stays out of the agents menu and installs unconditionally:
+    # 100% local, useful to any agent, harmless without one. Self-contained
+    # bundle (vendored Node runtime) in ~/.codegraph with a launcher symlink
+    # in ~/.local/bin — a peer like bun/opencode, deliberately NOT
+    # pnpm-managed. Self-updates via `codegraph upgrade` (run by u).
+    log "Installing CodeGraph..."
+    if command -v codegraph >/dev/null || [[ -x "$HOME/.local/bin/codegraph" ]]; then
+        sublog "already installed ($(command -v codegraph 2>/dev/null || echo "$HOME/.local/bin/codegraph")) — skipping; u updates it"
+        return 0
+    fi
+    sublog "codegraph installer (bundle -> ~/.codegraph, launcher -> ~/.local/bin)"
+    if ! curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh | sh; then
+        warn "CodeGraph install failed; continuing without it"
+        return 0
+    fi
+}
+
 configure_tealdeer() {
     command -v tldr >/dev/null || { log "tealdeer config"; warn "tldr not found — skipping"; return 0; }
     log "Configuring tealdeer (auto-update, zh_TW + en pages)..."
@@ -1709,6 +1729,7 @@ main() {
     setup_pnpm
     configure_pnpm
     install_agents
+    install_codegraph
     configure_tealdeer
     install_fonts
     configure_terminal_profile
