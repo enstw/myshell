@@ -1871,16 +1871,18 @@ configure_terminal_profile_macos() {
     sublog "Setting tokyo-night as default..."
     defaults write com.apple.Terminal "Default Window Settings" -string "tokyo-night"
     defaults write com.apple.Terminal "Startup Window Settings" -string "tokyo-night"
-    # Read back. A running Terminal.app owns this domain and can rewrite it
-    # from memory, so the value is not guaranteed to survive us. Reported with
-    # sublog rather than warn for now: the consequence is purely cosmetic, and
-    # this is the observation that tells us whether the fix above holds on a
-    # machine where Terminal is running — promote it to a warn once the macOS
-    # CI leg has shown a clean re-run.
+    # Read back, and warn when it did not take: a running Terminal.app owns
+    # this domain and can rewrite it from memory, so the value is not
+    # guaranteed to survive us. That is work deferred to the operator, which
+    # is what warn is for. It began as a sublog while the fix above was
+    # unproven; the macOS CI leg then showed the cold-launch run reading back
+    # correctly and both re-runs skipping (run 33412230146), so a failure here
+    # now means something genuinely went wrong rather than the race we knew
+    # about.
     if [[ "$(terminal_pref 'Default Window Settings')" == "tokyo-night" ]]; then
         sublog "default set to tokyo-night"
     else
-        sublog "default did not stick (Terminal.app owns this preference while running) — set it in Terminal > Settings > Profiles"
+        warn "Terminal default did not stick (Terminal.app owns it while running) — set it in Terminal > Settings > Profiles"
     fi
 }
 
