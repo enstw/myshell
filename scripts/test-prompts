@@ -89,8 +89,6 @@ tty_run() {
     fi
     cat "$out" 2>/dev/null
     rm -rf "$dir"
-    cat "$out" 2>/dev/null
-    rm -rf "$dir"
 }
 
 # fresh_home — a throwaway HOME so the choose_* recorders start with no
@@ -111,25 +109,42 @@ rm -f "$src_err"
 set +e; set +o pipefail; trap - ERR
 
 echo "== normalize_agent_choice (never reached by ci-roundtrip) =="
-is "empty means none"      ""                          "$(normalize_agent_choice '')"
-is "0 means none"          ""                          "$(normalize_agent_choice '0')"
-is "none means none"       ""                          "$(normalize_agent_choice 'none')"
-is "5 means all four"      "claude,codex,opencode,agy" "$(normalize_agent_choice '5')"
-is "all means all four"    "claude,codex,opencode,agy" "$(normalize_agent_choice 'all')"
-is "the 1,2 default"       "claude,codex"              "$(normalize_agent_choice '1,2')"
-is "answer order kept"     "codex,claude"              "$(normalize_agent_choice '2,1')"
-is "names work"            "claude,opencode"           "$(normalize_agent_choice 'claude,opencode')"
-is "aliases work"          "agy,claude"                "$(normalize_agent_choice 'antigravity,claude-code')"
-is "duplicates collapse"   "claude,codex"              "$(normalize_agent_choice '1,1,2')"
-is "spaces tolerated"      "claude,codex"              "$(normalize_agent_choice '1, 2')"
-is "all wins mid-list"     "claude,codex,opencode,agy" "$(normalize_agent_choice '3,all')"
-is "0 among names is ignored" "claude"                 "$(normalize_agent_choice '0,1')"
-is "unknown token dropped" "claude"                    "$(normalize_agent_choice '1,nope' 2>/dev/null)"
+# nac_is LABEL EXPECTED RAW — call the parser in THIS shell and check the
+# global it sets. Deliberately not `$(normalize_agent_choice ...)`: it warns,
+# and a command substitution would drop the WARNINGS increment on the floor —
+# the exact bug this function was reshaped to avoid, so testing it that way
+# would test the wrong thing.
+nac_is() { normalize_agent_choice "$3" 2>/dev/null; is "$1" "$2" "$AGENT_CHOICE"; }
+
+nac_is "empty means none"         ""                          ''
+nac_is "0 means none"             ""                          '0'
+nac_is "none means none"          ""                          'none'
+nac_is "5 means all four"         "claude,codex,opencode,agy" '5'
+nac_is "all means all four"       "claude,codex,opencode,agy" 'all'
+nac_is "the 1,2 default"          "claude,codex"              '1,2'
+nac_is "answer order kept"        "codex,claude"              '2,1'
+nac_is "names work"               "claude,opencode"           'claude,opencode'
+nac_is "aliases work"             "agy,claude"                'antigravity,claude-code'
+nac_is "duplicates collapse"      "claude,codex"              '1,1,2'
+nac_is "spaces tolerated"         "claude,codex"              '1, 2'
+nac_is "all wins mid-list"        "claude,codex,opencode,agy" '3,all'
+nac_is "0 among names is ignored" "claude"                    '0,1'
+nac_is "unknown token dropped"    "claude"                    '1,nope'
+
 unknown_msg=$(normalize_agent_choice '1,nope' 2>&1 >/dev/null)
 case "$unknown_msg" in
     *"unknown agent 'nope'"*) ok "unknown token is reported" ;;
     *) bad "unknown token is reported — got [$unknown_msg]" ;;
 esac
+
+# Regression (2026-08-31): the warning must also be COUNTED. This warn used to
+# happen inside a `$(...)` capture, so the message printed but WARNINGS never
+# moved — the Done line claimed a clean run while ci-roundtrip's
+# `grep -c '^warning:'` saw a warning in the same output.
+before="$WARNINGS"
+normalize_agent_choice '1,nope,alsonope' 2>/dev/null
+is "unknown tokens increment the warning counter" "$((before + 2))" "$WARNINGS"
+WARNINGS="$before"
 
 echo "== ask / confirm, under a real pty =="
 # One pty for all six: ask returns what was typed, ask falls back to its
@@ -156,6 +171,19 @@ got=$(tty_run '1,2
 ' 'choose_agents >/dev/null 2>&1
 cat "$STATE_DIR/agents" >"$OUT"' "$h")
 is "choose_agents records the normalized list" "claude,codex" "$got"
+rm -rf "$h"
+
+# Regression (2026-08-31), and the reason the parser sets a global instead of
+# echoing: the counter has to survive the CALL, not just the function. Testing
+# the parser alone misses a caller that re-wraps it in `$(...)` — which is how
+# the bug existed in the first place (caught by mutation-testing, where a
+# call-site-only regression slipped through everything else here).
+h=$(fresh_home)
+got=$(tty_run '1,nope
+' 'choose_agents >/dev/null 2>&1
+printf "agents=%s warnings=%s\n" "$(cat "$STATE_DIR/agents")" "$WARNINGS" >"$OUT"' "$h")
+is "an unknown token from the menu is counted, not just printed" \
+   "agents=claude warnings=1" "$got"
 rm -rf "$h"
 
 h=$(fresh_home)
