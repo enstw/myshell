@@ -67,6 +67,14 @@ login_shell() {
 }
 [[ "$(login_shell)" == */zsh ]] || fail "login shell not zsh after fresh run: $(login_shell)"
 [[ -x "$HOME/.local/bin/codegraph" ]] || fail "codegraph missing"
+# Regression (2026-08-31): the MOTD must not double. Ubuntu's pam_motd already
+# prints it for every login session (/etc/pam.d/sshd, /etc/pam.d/login), so the
+# interactive drop-in has to skip login shells — the bug only became visible
+# once the chsh fix above actually made zsh the login shell.
+if [[ -f "$HOME/.zsh/motd.zsh" ]]; then
+    grep -q '! -o login' "$HOME/.zsh/motd.zsh" \
+        || fail "motd.zsh is missing the login-shell guard (doubled MOTD)"
+fi
 [[ ! -f /etc/dpkg/dpkg.cfg.d/excludes ]] || fail "system still minimized (unminimize did not run)"
 
 run_bootstrap rerun
