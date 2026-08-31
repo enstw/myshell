@@ -1818,6 +1818,17 @@ configure_terminal_profile() {
     esac
 }
 
+# One com.apple.Terminal preference, empty when unset.
+terminal_pref() { defaults read com.apple.Terminal "$1" 2>/dev/null || true; }
+
+# True when Terminal already has the named profile imported. `Window Settings`
+# is a dict keyed by profile name, and a name containing a hyphen comes back
+# quoted — match either way.
+terminal_has_profile() {
+    defaults read com.apple.Terminal 'Window Settings' 2>/dev/null \
+        | grep -qE "^ +\"?$1\"? = "
+}
+
 configure_terminal_profile_macos() {
     local profile_path="$REPO_ROOT/assets/tokyo-night.terminal"
     if [[ ! -f "$profile_path" ]]; then
@@ -1825,20 +1836,52 @@ configure_terminal_profile_macos() {
         return 0
     fi
     log "Configuring Terminal profile..."
-    # Check-first: re-running `open` spawns a Terminal window every time, so
-    # skip when tokyo-night is already the default.
-    if [[ "$(defaults read com.apple.Terminal 'Default Window Settings' 2>/dev/null)" == "tokyo-night" ]]; then
+    if [[ "$(terminal_pref 'Default Window Settings')" == "tokyo-night" ]]; then
         sublog "already default — skipping"
         return 0
     fi
-    sublog "Installing tokyo-night profile..."
-    # Open the profile to import it into Terminal
-    open "$profile_path"
-    # Allow a brief moment for it to be registered
-    sleep 1
+    # Import keys on whether the PROFILE exists, not on whether it is the
+    # default. Those are different questions, and conflating them is what made
+    # this step non-idempotent: whenever the default had not stuck, the re-run
+    # ran `open` again and spawned another Terminal window (TODO.md carried
+    # this as an unverified risk from 2026-07-04).
+    if terminal_has_profile tokyo-night; then
+        sublog "profile already imported"
+    else
+        sublog "Installing tokyo-night profile..."
+        open "$profile_path"
+        # Poll for the import rather than `sleep 1`. A cold-launching
+        # Terminal is still starting a second later, and when it finishes it
+        # writes its OWN preferences — clobbering a Default Window Settings we
+        # set too early. That is exactly what the macOS CI showed (run
+        # 33410797061): the fresh run set the default, the re-run 43s later
+        # could not see it and re-imported, and a third run 1.5s after THAT
+        # one did see it. The profile appearing in the plist is Terminal's own
+        # write, so waiting for it puts our write safely after theirs.
+        local waited=0
+        while ! terminal_has_profile tokyo-night && [[ "$waited" -lt 20 ]]; do
+            sleep 1
+            waited=$((waited + 1))
+        done
+        if ! terminal_has_profile tokyo-night; then
+            warn "Terminal did not import tokyo-night — open assets/tokyo-night.terminal by hand"
+            return 0
+        fi
+    fi
     sublog "Setting tokyo-night as default..."
     defaults write com.apple.Terminal "Default Window Settings" -string "tokyo-night"
     defaults write com.apple.Terminal "Startup Window Settings" -string "tokyo-night"
+    # Read back. A running Terminal.app owns this domain and can rewrite it
+    # from memory, so the value is not guaranteed to survive us. Reported with
+    # sublog rather than warn for now: the consequence is purely cosmetic, and
+    # this is the observation that tells us whether the fix above holds on a
+    # machine where Terminal is running — promote it to a warn once the macOS
+    # CI leg has shown a clean re-run.
+    if [[ "$(terminal_pref 'Default Window Settings')" == "tokyo-night" ]]; then
+        sublog "default set to tokyo-night"
+    else
+        sublog "default did not stick (Terminal.app owns this preference while running) — set it in Terminal > Settings > Profiles"
+    fi
 }
 
 # GNOME Terminal has no profile-file import like Terminal.app — colors are
