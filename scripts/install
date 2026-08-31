@@ -85,8 +85,9 @@ set -Eeuo pipefail
 # - Interactive answers: every prompt runs up front in gather_answers, and
 #   each answer is recorded under ~/.local/state/myshell/ — the user's
 #   decision, not system state, is the idempotency key, so re-runs are quiet
-#   and the long package phase runs unattended (chsh may still ask for a
-#   password at the very end). Delete a state file to be asked again.
+#   and the whole run after gather_answers is unattended — no step may read
+#   from stdin, which in curl|sh mode is the consumed script pipe (see
+#   set_login_shell). Delete a state file to be asked again.
 #   Headless runs: the answer store IS the supported seeding interface —
 #   pre-seed $STATE_DIR/agents (normalized agent list, e.g. "claude,codex";
 #   empty = none), $STATE_DIR/fonts (yes/no), $STATE_DIR/login-shell (yes/no),
@@ -256,6 +257,22 @@ warm_sudo() {
     [[ -n "$SUDO" ]] || return 0
     if ! sudo_work_pending; then
         sublog "no system-level changes pending — skipping sudo pre-auth"
+        return 0
+    fi
+    # A host that already runs sudo commands without a password (cloud images
+    # ship NOPASSWD:ALL — the Ubuntu NAS this was found on, 2026-08-31) has no
+    # timestamp to warm and no prompt to move up front. Probing first keeps a
+    # tty-less run alive: `sudo -v` would otherwise abort it via the ERR trap
+    # with "A terminal is required to authenticate", breaking the headless
+    # contract on a box where every real sudo call would have succeeded.
+    #
+    # The probe is `-n true`, NOT `-n -v`: `sudo -v` insists on interactive
+    # auth whenever ANY rule the user matches needs a password — the %sudo
+    # group's `(ALL:ALL) ALL` does — even though the last matching rule for an
+    # actual command is the NOPASSWD one that governs every $SUDO call here.
+    # `-n -v` is therefore a false negative on exactly the hosts we care about.
+    if $SUDO -n true 2>/dev/null; then
+        sublog "sudo needs no password on this host — skipping pre-auth"
         return 0
     fi
     $SUDO -v
@@ -1694,8 +1711,35 @@ set_login_shell() {
         sublog "Adding $zsh_path to /etc/shells..."
         echo "$zsh_path" | $SUDO tee -a /etc/shells >/dev/null
     fi
-    sublog "chsh -s $zsh_path (may prompt for your password)"
-    chsh -s "$zsh_path"
+    # chsh authenticates the *invoking* user through PAM, and PAM reads that
+    # password from stdin. In curl|sh mode stdin is the script pipe, already
+    # consumed — so the read hits EOF and chsh dies "PAM: Authentication
+    # failure" before the user can type anything. As the last command of the
+    # last step, that tripped the ERR trap and aborted the run at the finish
+    # line: everything installed, login shell still bash, no Done line
+    # (2026-08-31, fresh Ubuntu box; CI never caught it because ci-roundtrip
+    # seeded login-shell=no, which skipped this step — it now seeds yes).
+    #
+    # So prefer `$SUDO chsh <user>`: root authenticates through PAM's root
+    # bypass, no password at any tty, which also makes the step headless-safe.
+    # On a host that needs a sudo password, warm_sudo's keep-alive has been
+    # refreshing the timestamp every 60s, so sudo is still valid this late in a
+    # long run. `chsh -s <shell> <user>` is spelled the same on Ubuntu and
+    # macOS.
+    # Without sudo, fall back to reading the password from the tty, like ask.
+    # Either way, failure only warns — a login shell is not worth aborting an
+    # otherwise complete install for.
+    local me
+    me=$(id -un)
+    if [[ -n "$SUDO" || $EUID -eq 0 ]]; then
+        sublog "chsh -s $zsh_path $me"
+        $SUDO chsh -s "$zsh_path" "$me" \
+            || warn "chsh failed — set it manually: sudo chsh -s $zsh_path $me"
+    else
+        sublog "chsh -s $zsh_path (will prompt for your password)"
+        chsh -s "$zsh_path" </dev/tty \
+            || warn "chsh failed — set it manually: chsh -s $zsh_path"
+    fi
 }
 
 main() {

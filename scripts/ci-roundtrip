@@ -31,7 +31,11 @@ run_bootstrap() {
 mkdir -p "$HOME/.local/state/myshell"
 printf '%s\n' "${MYSHELL_CI_AGENTS:-}" >"$HOME/.local/state/myshell/agents"
 printf 'no\n' >"$HOME/.local/state/myshell/fonts"
-printf 'no\n' >"$HOME/.local/state/myshell/login-shell"
+# 'yes', not 'no': answering no skips set_login_shell's chsh entirely, and that
+# blind spot is exactly how the 2026-08-31 curl|sh chsh bug shipped. The
+# environments here are the ones that must work unattended (root container,
+# NOPASSWD sudoer, macOS runner), so let the step run and assert it below.
+printf 'yes\n' >"$HOME/.local/state/myshell/login-shell"
 git config --global user.name  ci
 git config --global user.email ci@example.invalid
 
@@ -48,6 +52,20 @@ pnpm_bin="$HOME/.local/share/pnpm/bin/pnpm"
 [[ "$("$pnpm_bin" config get strict-dep-builds 2>/dev/null)" == "true" ]] \
     || fail "pnpm strict-dep-builds not pinned"
 command -v zsh >/dev/null || fail "zsh missing"
+
+# Regression (2026-08-31): the chsh step must actually change the login shell,
+# unattended. It used to let PAM read its password prompt from stdin — which in
+# curl|sh mode is the already-consumed script pipe, so it hit EOF, died "PAM:
+# Authentication failure", and tripped the ERR trap as the very last command of
+# the run: everything installed, login shell still bash, no Done line.
+login_shell() {
+    if [[ "$(uname -s)" == Darwin ]]; then
+        dscl . -read "/Users/$(id -un)" UserShell 2>/dev/null | awk '{print $2}'
+    else
+        getent passwd "$(id -un)" | cut -d: -f7
+    fi
+}
+[[ "$(login_shell)" == */zsh ]] || fail "login shell not zsh after fresh run: $(login_shell)"
 [[ -x "$HOME/.local/bin/codegraph" ]] || fail "codegraph missing"
 [[ ! -f /etc/dpkg/dpkg.cfg.d/excludes ]] || fail "system still minimized (unminimize did not run)"
 
