@@ -17,6 +17,12 @@ fix=0
 sh   -n bootstrap
 bash -n scripts/install
 bash -n scripts/myshell-update
+# update.d drop-ins are sourced by myshell-update, so a syntax error in one
+# only surfaces at `u` time on whatever machine has it deployed. Gate them here.
+for drop_in in update.d/*.sh; do
+    [[ -f "$drop_in" ]] || continue
+    bash -n "$drop_in"
+done
 echo "syntax: ok"
 
 block() { sed -n '/^WARNINGS=0$/,/^die()/p' "$1"; }

@@ -1141,6 +1141,19 @@ deploy_scripts() {
         rm -f "$HOME/bin/update"
     fi
 
+    # Extension point for machine-local update steps: ~/bin/myshell-update is
+    # overwritten above on every run, so a hand-edit there is lost — these
+    # drop-ins are where local steps belong. Same ownership rule as ~/.zsh: the
+    # installer rewrites the files myshell ships and never touches anything
+    # else in the directory. Each drop-in guards on its own target existing, so
+    # shipping them to every machine is a no-op where that target is absent.
+    sublog "~/.config/myshell/update.d/"
+    mkdir -p "$HOME/.config/myshell/update.d"
+    for drop_in in "$REPO_ROOT"/update.d/*.sh; do
+        [[ -f "$drop_in" ]] || continue   # unmatched glob stays literal
+        cp "$drop_in" "$HOME/.config/myshell/update.d/${drop_in##*/}"
+    done
+
     sublog "~/.config/starship.toml"
     mkdir -p "$HOME/.config"
     # Install-once, not sync: an existing starship.toml is the user's — maybe
