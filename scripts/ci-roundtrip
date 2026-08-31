@@ -34,6 +34,10 @@ run_bootstrap() {
 # git config for the identity prompt.
 mkdir -p "$HOME/.local/state/myshell"
 printf '%s\n' "${MYSHELL_CI_AGENTS:-}" >"$HOME/.local/state/myshell/agents"
+# Optional apps default to none here: quarto/TinyTeX/Zed are hundreds of
+# megabytes and machine-specific, and the whole point of the menu is that
+# nothing installs them unasked. The empty answer is asserted below.
+printf '%s\n' "${MYSHELL_CI_OPTIONAL_APPS:-}" >"$HOME/.local/state/myshell/optional-apps"
 printf 'no\n' >"$HOME/.local/state/myshell/fonts"
 # 'yes', not 'no': answering no skips set_login_shell's chsh entirely, and that
 # blind spot is exactly how the 2026-08-31 curl|sh chsh bug shipped. The
@@ -89,6 +93,14 @@ else
     # not be re-read as "ask again" or "install the default".
     [[ ! -e "$HOME/.local/bin/claude" ]] \
         || fail "claude installed without being selected"
+fi
+
+# Same promise for the optional-apps menu, which defaults to none here.
+if [[ -z "${MYSHELL_CI_OPTIONAL_APPS:-}" ]]; then
+    grep -q 'none selected.*optional-apps' /tmp/ci-fresh-out.log \
+        || fail "install_optional_apps did not honor the empty answer"
+    [[ ! -e "$HOME/.TinyTeX" ]] || fail "TinyTeX installed without being selected"
+    command -v quarto >/dev/null && fail "quarto installed without being selected"
 fi
 
 # Regression (2026-08-31/09-01): the MOTD is PAM's job alone. pam_motd

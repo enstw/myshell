@@ -131,6 +131,21 @@ nac_is "all wins mid-list"        "claude,codex,opencode,agy" '3,all'
 nac_is "0 among names is ignored" "claude"                    '0,1'
 nac_is "unknown token dropped"    "claude"                    '1,nope'
 
+echo "== normalize_optional_apps (the second menu) =="
+# Same shape as nac_is, and called in this shell for the same reason: the
+# parser warns, and a $(...) capture would drop the WARNINGS increment.
+nopt_is() { normalize_optional_apps "$3" 2>/dev/null; is "$1" "$2" "$OPTIONAL_APPS"; }
+
+nopt_is "empty means none"       ""                            ''
+nopt_is "0 means none"           ""                            '0'
+nopt_is "5 means all four"       "quarto,pandoc,proxmark3,zed" '5'
+nopt_is "numbers map to names"   "quarto,zed"                  '1,4'
+nopt_is "names work"             "pandoc,proxmark3"            'pandoc,proxmark3'
+nopt_is "pm3 is an alias"        "proxmark3"                   'pm3'
+nopt_is "duplicates collapse"    "quarto"                      '1,quarto'
+nopt_is "unknown token dropped"  "zed"                         'zed,nope'
+
+echo "== normalize_agent_choice, continued =="
 unknown_msg=$(normalize_agent_choice '1,nope' 2>&1 >/dev/null)
 case "$unknown_msg" in
     *"unknown agent 'nope'"*) ok "unknown token is reported" ;;
@@ -234,23 +249,27 @@ printf "name=%s email=%s\n" "$GIT_NAME" "$GIT_EMAIL" >"$OUT"')
 is "an unset identity is prompted for" "name=Ada Lovelace email=ada@example.invalid" "$got"
 
 echo "== gather_answers asks in order, and only for selected phases =="
-# The full menu in order: agents, fonts, login shell. A wrong order would land
-# each answer in the wrong file. gather_git_identity is stubbed out (covered
-# above) so the test does not depend on a git being installed — on a bare
-# ubuntu:24.04 there is none, and it would prompt and eat these answers.
+# The full menu in order: agents, optional apps, fonts, login shell. A wrong
+# order would land each answer in the wrong file, and this is the only thing
+# that would catch it. gather_git_identity is stubbed out (covered above) so
+# the test does not depend on a git being installed — on a bare ubuntu:24.04
+# there is none, and it would prompt and eat these answers.
 h=$(fresh_home)
 got=$(tty_run '1,2
+1,4
 y
 y
 ' 'warm_sudo() { :; }
 gather_git_identity() { :; }
 current_login_shell() { echo /bin/bash; }
 gather_answers >/dev/null 2>&1
-printf "agents=%s fonts=%s login=%s\n" \
+printf "agents=%s optional=%s fonts=%s login=%s\n" \
     "$(cat "$STATE_DIR/agents" 2>/dev/null)" \
+    "$(cat "$STATE_DIR/optional-apps" 2>/dev/null)" \
     "$(cat "$STATE_DIR/fonts" 2>/dev/null)" \
     "$(cat "$STATE_DIR/login-shell" 2>/dev/null)" >"$OUT"' "$h")
-is "a full run asks all three in order" "agents=claude,codex fonts=yes login=yes" "$got"
+is "a full run asks all four in order" \
+   "agents=claude,codex optional=quarto,zed fonts=yes login=yes" "$got"
 rm -rf "$h"
 
 # The phase refactor's contract: --phase fonts must not ask the agent menu.
@@ -262,9 +281,10 @@ current_login_shell() { echo /bin/bash; }
 SELECTED_PHASES=(fonts)
 gather_answers >/dev/null 2>&1
 exists() { [[ -f "$STATE_DIR/$1" ]] && echo yes || echo no; }
-printf "agents=%s fonts=%s login=%s\n" \
-    "$(exists agents)" "$(exists fonts)" "$(exists login-shell)" >"$OUT"' "$h")
-is "--phase fonts asks only the font question" "agents=no fonts=yes login=no" "$got"
+printf "agents=%s optional=%s fonts=%s login=%s\n" \
+    "$(exists agents)" "$(exists optional-apps)" "$(exists fonts)" "$(exists login-shell)" >"$OUT"' "$h")
+is "--phase fonts asks only the font question" \
+   "agents=no optional=no fonts=yes login=no" "$got"
 rm -rf "$h"
 
 echo "== no tty: die, never fabricate an answer =="

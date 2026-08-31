@@ -59,7 +59,8 @@ set -Eeuo pipefail
 #   _macos/_ubuntu pair behind a case dispatch (configure_terminal_profile).
 #   Shared helpers exist where the RECIPE repeats, not the verb:
 #   apt_keyring_repo (third-party apt repos), fetch_config (idempotent
-#   downloads), install_agent (fail-soft agent installers),
+#   downloads), try_install (fail-soft optional installers, shared by the
+#   agents and optional-apps menus),
 #   brew_install_missing / apt_install_missing (check-first batch installs,
 #   called once per package-installing phase).
 #
@@ -87,6 +88,18 @@ set -Eeuo pipefail
 #   ~/.local/bin in PATH so a stale pnpm copy would shadow them. claude and
 #   agy land in ~/.local/bin (already on PATH); opencode in ~/.opencode/bin.
 #
+# - Optional apps: quarto (+TinyTeX), pandoc (+xelatex), proxmark3 and Zed sit
+#   behind ONE menu like the agents one, recorded in
+#   ~/.local/state/myshell/optional-apps, defaulting to none — they are heavy
+#   and machine-specific, so nothing installs them unasked. TinyTeX is shared
+#   by the quarto and pandoc entries so selecting both installs TeX once
+#   (~200MB, user-local, no sudo; chosen over BasicTeX/texlive-xetex and full
+#   MacTeX). quarto and Zed come from brew casks on macOS and from upstream's
+#   .deb / install script on Ubuntu. proxmark3 is macOS-only via the
+#   RfidResearchGroup tap: on Ubuntu it needs a from-source build whose
+#   dependency list and Makefile flags move with the firmware, so the step
+#   warns and points at the upstream guide rather than carrying that here.
+#
 # - tealdeer: the Rust `tealdeer`, not the Python `tldr`. Page language comes
 #   from $LANGUAGE (tealdeer has no language option of its own).
 #
@@ -112,6 +125,7 @@ set -Eeuo pipefail
 #   set_login_shell). Delete a state file to be asked again.
 #   Headless runs: the answer store IS the supported seeding interface —
 #   pre-seed $STATE_DIR/agents (normalized agent list, e.g. "claude,codex";
+#   empty = none), $STATE_DIR/optional-apps (same shape, e.g. "quarto,zed";
 #   empty = none), $STATE_DIR/fonts (yes/no), $STATE_DIR/login-shell (yes/no),
 #   and `git config --global user.name`/`user.email` for the identity
 #   prompt; no tty is needed after that. scripts/ci-roundtrip is the
@@ -334,6 +348,8 @@ run_phase() {
 # for a password on a re-run that then changes nothing is a bug (2026-07-04).
 sudo_work_pending() {
     [[ -n "$SUDO" ]] || return 1
+    local opt
+    opt=$(cat "$STATE_DIR/optional-apps" 2>/dev/null || true)
     # Grouped by phase, and each group is skipped when its phase is not
     # selected: `--phase fonts` touches nothing under /etc, so predicting the
     # apt work of an unselected phase would resurrect exactly the surprise
@@ -355,13 +371,25 @@ sudo_work_pending() {
                 dpkg -s "$p" >/dev/null 2>&1 && return 0                           # purge_conflicts
             done
             [[ -f /var/lib/command-not-found/commands.db ]] || return 0            # configure_command_not_found
+            # The optional apps that need root here: quarto's .deb and apt
+            # pandoc. Readable at all because warm_sudo now runs after the
+            # questions rather than before them.
+            [[ ",$opt," == *,quarto,* ]] && ! command -v quarto >/dev/null && return 0   # install_quarto
+            [[ ",$opt," == *,pandoc,* ]] && ! command -v pandoc >/dev/null && return 0   # install_pandoc
             id -nG "$(id -un)" | grep -qw docker || return 0                       # configure_docker_group
             [[ -f /etc/dpkg/dpkg.cfg.d/excludes ]] && return 0                     # unminimize_ubuntu
         fi
-    elif phase_selected system; then
-        local tz
-        tz=$(readlink /etc/localtime 2>/dev/null || true)
-        [[ "${tz#*/zoneinfo/}" != Asia/Taipei ]] && return 0            # configure_timezone
+    else
+        if phase_selected system; then
+            local tz
+            tz=$(readlink /etc/localtime 2>/dev/null || true)
+            [[ "${tz#*/zoneinfo/}" != Asia/Taipei ]] && return 0        # configure_timezone
+        fi
+        if phase_selected packages; then
+            # The quarto cask has a pkg stanza, so brew runs `sudo installer`
+            # for it. Zed's cask is a plain .app and needs no root.
+            [[ ",$opt," == *,quarto,* ]] && ! command -v quarto >/dev/null && return 0   # install_quarto
+        fi
     fi
     phase_selected shell || return 1
     # set_login_shell touches /etc/shells only when a switch to zsh will
@@ -452,6 +480,22 @@ choose_agents() {
     sublog "choice recorded (${selected:-none}) — rm $STATE_DIR/agents to change it"
 }
 
+choose_optional_apps() {
+    [[ -f "$STATE_DIR/optional-apps" ]] && return 0
+    sublog "Optional apps — pick numbers, comma-separated: 0 none, 1 quarto (+TinyTeX), 2 pandoc (+xelatex), 3 proxmark3, 4 Zed, 5 all."
+    sublog "Names work too: all, none, or e.g. quarto,zed."
+    # Two statements, not one nested substitution — same reason as
+    # choose_agents: a die inside ask has to fail the assignment rather than
+    # be swallowed and recorded as a real answer.
+    local raw selected
+    raw=$(ask "Install which optional apps?" "0")
+    normalize_optional_apps "$raw"
+    selected="$OPTIONAL_APPS"
+    mkdir -p "$STATE_DIR"
+    printf '%s\n' "$selected" >"$STATE_DIR/optional-apps"
+    sublog "choice recorded (${selected:-none}) — rm $STATE_DIR/optional-apps to change it"
+}
+
 choose_fonts() {
     [[ -f "$STATE_DIR/fonts" ]] && return 0
     # Font already on disk: skip WITHOUT recording — the user never answered,
@@ -484,14 +528,21 @@ choose_login_shell() {
 
 gather_answers() {
     log "Questions first — the rest of the run is unattended (re-runs skip answered ones)"
-    warm_sudo
     # Only ask what the selected phases will use: `--phase fonts` must not
     # prompt for the agent menu. Each question is also asked at its point of
     # use, so a phase run on its own still gets its answer.
-    if phase_selected shell;  then gather_git_identity; fi
-    if phase_selected agents; then choose_agents; fi
-    if phase_selected fonts;  then choose_fonts; fi
-    if phase_selected shell;  then choose_login_shell; fi
+    if phase_selected shell;    then gather_git_identity; fi
+    if phase_selected agents;   then choose_agents; fi
+    if phase_selected packages; then choose_optional_apps; fi
+    if phase_selected fonts;    then choose_fonts; fi
+    if phase_selected shell;    then choose_login_shell; fi
+    # LAST, not first. warm_sudo predicts whether any sudo step will really
+    # run this round, and two of those predictions read answers gathered just
+    # above: the optional apps that need root on Ubuntu, and the login shell.
+    # It still happens inside the question block, so the password prompt is
+    # still up front with everything else — it just now knows what it is
+    # predicting instead of guessing (2026-09-01).
+    warm_sudo
 }
 
 # --- phase: shell -----------------------------------------------------------
@@ -1597,6 +1648,178 @@ normalize_agent_choice() {
     AGENT_CHOICE="${names[*]-}"
 }
 
+# normalize_optional_apps RAW — set OPTIONAL_APPS to the canonical
+# comma-separated list for a menu answer of numbers and/or names. Deliberately
+# parallel to normalize_agent_choice rather than sharing code with it: the two
+# menus have different tokens, different aliases and different warning nouns,
+# and the repo has already been bitten once by folding two similar-shaped
+# things together (see purge_non_uv_python / purge_non_pnpm_node). Sets a
+# global for the same reason that one does — it warns, and a `$(...)` capture
+# would drop the WARNINGS increment (54aa351).
+OPTIONAL_APPS=""
+normalize_optional_apps() {
+    local raw="$1" token name names=()
+    local -A seen=()
+    OPTIONAL_APPS=""
+    case "$raw" in
+        0|none|"") return 0 ;;
+    esac
+    for token in ${raw//,/ }; do
+        name=""
+        case "$token" in
+            5|all) OPTIONAL_APPS="quarto,pandoc,proxmark3,zed"; return 0 ;;
+            1|quarto)        name=quarto ;;
+            2|pandoc)        name=pandoc ;;
+            3|proxmark3|pm3) name=proxmark3 ;;
+            4|zed)           name=zed ;;
+            0|none) ;;
+            *) warn "unknown optional app '$token' (ignoring)" ;;
+        esac
+        [[ -z "$name" || -n "${seen[$name]:-}" ]] && continue
+        seen[$name]=1
+        names+=("$name")
+    done
+    local IFS=,
+    OPTIONAL_APPS="${names[*]-}"
+}
+
+install_optional_apps() {
+    log "Optional apps — quarto, pandoc, proxmark3, Zed"
+    choose_optional_apps
+    local selected app
+    selected=$(<"$STATE_DIR/optional-apps")
+    if [[ -z "$selected" ]]; then
+        sublog "none selected (rm $STATE_DIR/optional-apps to re-choose) — skipping"
+        return 0
+    fi
+    sublog "selected: $selected (rm $STATE_DIR/optional-apps to re-choose)"
+    for app in ${selected//,/ }; do
+        case "$app" in
+            quarto)    try_install "quarto"    install_quarto ;;
+            pandoc)    try_install "pandoc"    install_pandoc ;;
+            proxmark3) try_install "proxmark3" install_proxmark3 ;;
+            zed)       try_install "Zed"       install_zed ;;
+            *)         warn "unknown optional app '$app' in $STATE_DIR/optional-apps (skipping)" ;;
+        esac
+    done
+}
+
+# brew_cask_install CASK — check-first cask install. Casks are a separate
+# namespace from formulae (`brew list --cask`), and some run a .pkg installer
+# that asks for a password — one more reason these live behind an opt-in menu
+# rather than in the base package sets.
+brew_cask_install() {
+    if brew list --cask "$1" >/dev/null 2>&1; then
+        sublog "$1 already installed — skipping"
+        return 0
+    fi
+    sublog "brew install --cask $1"
+    brew install --cask "$1"
+}
+
+# TinyTeX — the TeX engine behind both the quarto and pandoc entries, so
+# selecting both installs it once. ~200MB, user-local under ~/.TinyTeX, no
+# sudo, and it fetches missing LaTeX packages on demand at first use rather
+# than shipping a multi-gigabyte distribution up front (chosen 2026-09-01 over
+# BasicTeX/texlive-xetex and full MacTeX).
+install_tinytex() {
+    if compgen -G "$HOME/.TinyTeX/bin/*/xelatex" >/dev/null; then
+        sublog "TinyTeX already installed — skipping"
+        return 0
+    fi
+    # </dev/null on both: this runs in the unattended part of the run (the
+    # header's answers rule), and neither installer may block on a prompt.
+    if command -v quarto >/dev/null; then
+        sublog "quarto install tinytex"
+        quarto install tinytex </dev/null || warn "quarto install tinytex failed"
+    else
+        sublog "TinyTeX installer (yihui.org)"
+        curl -fsSL https://yihui.org/tinytex/install-bin-unix.sh | sh </dev/null \
+            || warn "TinyTeX install failed"
+    fi
+}
+
+install_quarto() {
+    log "Installing quarto..."
+    if command -v quarto >/dev/null; then
+        sublog "already installed ($(command -v quarto)) — skipping"
+    elif [[ "$OS" == macos ]]; then
+        brew_cask_install quarto
+    else
+        if [[ "$NO_SUDO" == 1 ]]; then
+            warn "no sudo — cannot install the quarto .deb; skipping"
+            return 0
+        fi
+        # The GitHub release assets carry the version in their filenames, but
+        # quarto.org/download/latest/quarto-linux-<arch>.deb is a stable
+        # redirect to the current one — so there is no version to track here.
+        local arch deb
+        case "$(dpkg --print-architecture)" in
+            amd64) arch=amd64 ;;
+            arm64) arch=arm64 ;;
+            *) warn "no quarto build for $(dpkg --print-architecture) — skipping"; return 0 ;;
+        esac
+        deb=$(mktemp --suffix=.deb)
+        if ! curl -fsSL -o "$deb" "https://quarto.org/download/latest/quarto-linux-$arch.deb"; then
+            rm -f "$deb"
+            warn "quarto download failed — skipping"
+            return 0
+        fi
+        sublog "apt install quarto-linux-$arch.deb"
+        # apt-get, not dpkg -i: it resolves the .deb's dependencies too.
+        $SUDO apt-get install -y "$deb"
+        rm -f "$deb"
+    fi
+    install_tinytex
+}
+
+install_pandoc() {
+    log "Installing pandoc..."
+    if command -v pandoc >/dev/null; then
+        sublog "already installed ($(command -v pandoc)) — skipping"
+    elif [[ "$OS" == macos ]]; then
+        brew_install_missing pandoc
+    else
+        apt_install_missing pandoc
+    fi
+    # xelatex comes from the same TinyTeX the quarto entry uses.
+    install_tinytex
+}
+
+install_zed() {
+    log "Installing Zed..."
+    if [[ "$OS" == macos ]]; then
+        brew_cask_install zed
+        return 0
+    fi
+    if command -v zed >/dev/null || [[ -x "$HOME/.local/bin/zed" ]]; then
+        sublog "already installed — skipping"
+        return 0
+    fi
+    sublog "zed.dev installer (binary -> ~/.local/bin/zed)"
+    curl -fsSL https://zed.dev/install.sh | sh
+}
+
+install_proxmark3() {
+    log "Installing proxmark3..."
+    if [[ "$OS" != macos ]]; then
+        # Ubuntu has no package for it. Upstream's route is a from-source
+        # build whose apt dependency list and Makefile flags move with the
+        # firmware, which is not a thing this installer should carry — so it
+        # points at the upstream guide instead (decided 2026-09-01).
+        warn "proxmark3 on Ubuntu needs a from-source build — see github.com/RfidResearchGroup/proxmark3, docs/md/Installation_Instructions"
+        return 0
+    fi
+    if command -v pm3 >/dev/null || command -v proxmark3 >/dev/null; then
+        sublog "already installed — skipping"
+        return 0
+    fi
+    sublog "brew tap RfidResearchGroup/proxmark3"
+    brew tap RfidResearchGroup/proxmark3
+    sublog "brew install --HEAD proxmark3"
+    brew install --HEAD proxmark3
+}
+
 install_agents() {
     log "AI agents — Claude Code, Codex, OpenCode, Antigravity (agy)"
     # One menu for all four agents; "0 none" really means none (no follow-up
@@ -1614,10 +1837,10 @@ install_agents() {
     sublog "selected: $selected (rm $STATE_DIR/agents to re-choose)"
     for agent in ${selected//,/ }; do
         case "$agent" in
-            claude)   install_agent "Claude Code"      install_claude_code ;;
-            codex)    install_agent "OpenAI Codex CLI" install_codex ;;
-            opencode) install_agent "OpenCode"         install_opencode ;;
-            agy)      install_agent "Antigravity CLI"  install_agy ;;
+            claude)   try_install "Claude Code"      install_claude_code ;;
+            codex)    try_install "OpenAI Codex CLI" install_codex ;;
+            opencode) try_install "OpenCode"         install_opencode ;;
+            agy)      try_install "Antigravity CLI"  install_agy ;;
             *)        warn "unknown agent '$agent' in $STATE_DIR/agents (skipping)" ;;
         esac
     done
@@ -1627,7 +1850,7 @@ install_opencode() {
     # OpenCode — standalone prebuilt binary (no npm/node) in ~/.opencode/bin,
     # installed like bun. Self-updates via `opencode upgrade`, so it stays out
     # of the pnpm global set (see the header's agent rule). No sudo; works
-    # under NO_SUDO. Fail-soft via the install_agent wrapper.
+    # under NO_SUDO. Fail-soft via the try_install wrapper.
     log "Installing OpenCode..."
     if [[ -x "$HOME/.opencode/bin/opencode" ]]; then
         sublog "already installed (~/.opencode/bin) — skipping"
@@ -1656,7 +1879,11 @@ install_agy() {
 }
 
 
-install_agent() {
+# try_install LABEL CMD... — run an optional installer, warn instead of
+# aborting when it fails. Shared by the agents menu and the optional-apps menu
+# (it was install_agent until the second menu arrived; nothing about it was
+# ever agent-specific).
+try_install() {
     local label="$1"
     shift
     if "$@"; then
@@ -2118,6 +2345,7 @@ phase_packages() {
     configure_command_not_found
     configure_docker_group
     configure_tealdeer
+    install_optional_apps
     # Purge before unminimize so we don't reinstall docs for packages we are
     # about to remove — and before phase agents, because purge_non_pnpm_node
     # deletes a legacy npm @openai/codex while install_codex is check-first:

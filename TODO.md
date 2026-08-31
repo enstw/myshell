@@ -13,7 +13,6 @@ Completed work and resolved incidents are archived in [.archive/TODO-done.md](.a
 
 ## Deferred (not yet in `scripts/install`)
 
-1. Optional apps: quarto + TinyTeX, pandoc + xelatex, proxmark3, zed. Pattern when these land: one `choose_optional_apps` menu recorded like the agents answer, per-app `install_` functions per the header's step grammar, `apt_keyring_repo` for any new third-party repos — no data-driven package table (that's the abandoned `.archive/setup.sh` design).
 1. A `--yes`-style flag that accepts every default — optional sugar; answer-store seeding is already the documented headless interface (README "Headless / unattended"). Stage 2's flag surface is otherwise deliberately just `--phase` / `--list-phases` / `--help`.
 1. `myshell` dispatcher (`myshell update|sync|agents`) — deliberately deferred until a third user-facing verb exists; today `u` + re-running bootstrap cover the whole post-install surface.
 

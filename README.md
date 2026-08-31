@@ -30,6 +30,7 @@ Headless / unattended (CI, cloud VMs): pre-seed the answers, then run bootstrap 
 ```sh
 mkdir -p ~/.local/state/myshell
 printf 'claude,codex\n' > ~/.local/state/myshell/agents   # or empty for none
+printf '\n' > ~/.local/state/myshell/optional-apps          # quarto,pandoc,proxmark3,zed
 printf 'no\n'  > ~/.local/state/myshell/fonts              # yes/no
 printf 'yes\n' > ~/.local/state/myshell/login-shell        # yes/no
 git config --global user.name  "Your Name"
