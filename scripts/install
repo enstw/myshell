@@ -2054,4 +2054,10 @@ main() {
     fi
 }
 
-main "$@"
+# Run only when executed, not when sourced. scripts/test-prompts sources this
+# file to drive ask/confirm, normalize_agent_choice and the choose_* recorders
+# directly — the prompt layer is the one part of stage 2 the round-trips
+# cannot reach, because they seed every answer precisely so nothing prompts.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

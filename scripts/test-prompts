@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+# Interactive-prompt tests — the one part of stage 2 that scripts/ci-roundtrip
+# structurally cannot reach.
+#
+# The round-trips are headless BY CONSTRUCTION: they seed every answer under
+# $STATE_DIR up front so that no prompt fires, which is exactly what makes them
+# runnable without a tty. The consequence is that ask/confirm never return a
+# real answer there (only their die-on-no-tty path runs, in the no-answer
+# test), and normalize_agent_choice — the whole agent menu parser, and the one
+# place a typo silently RECORDS the wrong decision forever — never executes at
+# all. This file covers that gap; it is why the interactive docker round-trip
+# is no longer carried as a manual task in TODO.md.
+#
+# Two kinds of test:
+#   - the parser is a pure function, so it is called directly;
+#   - ask/confirm read from /dev/tty on purpose (see the header's answers
+#     rule), so redirecting stdin is not enough — those run under a real pty.
+#     `script` is the only pty allocator present on BOTH a bare ubuntu:24.04
+#     and a Mac (python3 is not in the container), and its argument order
+#     differs between util-linux and BSD. Feeding it needs a trailing sleep:
+#     without one the EOF wins the race against the first read and every
+#     answer comes back empty, which looks exactly like a passing default.
+#
+# stage 2 is sourced here, which is why it guards `main "$@"` on being
+# executed. Sourcing also turns on its set -Eeuo pipefail and ERR trap; both
+# are dropped again below so this driver can exercise failure paths.
+set -uo pipefail
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Seconds to hold the pty open after the last keystroke. Generous on purpose:
+# too short and the tests fail as "empty answer", which reads like a real bug.
+TTY_SETTLE="${TTY_SETTLE:-2}"
+
+PASS=0
+FAIL=0
+ok()  { PASS=$((PASS+1)); printf '  ok    %s\n' "$*"; }
+bad() { FAIL=$((FAIL+1)); printf '  FAIL  %s\n' "$*" >&2; }
+# is LABEL EXPECTED ACTUAL
+is() {
+    if [[ "$2" == "$3" ]]; then ok "$1"; else bad "$1 — expected [$2], got [$3]"; fi
+}
+
+# tty_run INPUT SNIPPET [HOME] — run SNIPPET with a real controlling terminal,
+# feeding INPUT as keystrokes, and echo whatever the snippet wrote to $OUT.
+# Assertions read that file, not the pty, whose output is line noise (echoed
+# keystrokes and \r). A HOME override must be exported before stage 2 is
+# sourced: $STATE_DIR is computed at source time.
+tty_run() {
+    local input="$1" snippet="$2" home="${3:-}" dir file out
+    dir=$(mktemp -d)
+    file="$dir/snippet.sh"
+    out="$dir/out"
+    {
+        if [[ -n "$home" ]]; then
+            printf 'export HOME=%q XDG_STATE_HOME=%q\n' "$home" "$home/.local/state"
+        fi
+        printf 'OUT=%q\n' "$out"
+        printf 'source %q >/dev/null 2>&1\n' "$REPO_ROOT/scripts/install"
+        printf 'set +e; set +o pipefail; trap - ERR\n'
+        printf '%s\n' "$snippet"
+    } >"$file"
+    if [[ "$(uname -s)" == Darwin ]]; then
+        { printf '%s' "$input"; sleep "$TTY_SETTLE"; } \
+            | script -q /dev/null bash "$file" >/dev/null 2>&1
+    else
+        { printf '%s' "$input"; sleep "$TTY_SETTLE"; } \
+            | script -qec "bash $file" /dev/null >/dev/null 2>&1
+    fi
+    cat "$out" 2>/dev/null
+    rm -rf "$dir"
+}
+
+# fresh_home — a throwaway HOME so the choose_* recorders start with no
+# answers, no font on disk, and no git identity.
+fresh_home() { mktemp -d; }
+
+# shellcheck source=./install
+source "$REPO_ROOT/scripts/install" >/dev/null 2>&1
+set +e; set +o pipefail; trap - ERR
+
+echo "== normalize_agent_choice (never reached by ci-roundtrip) =="
+is "empty means none"      ""                          "$(normalize_agent_choice '')"
+is "0 means none"          ""                          "$(normalize_agent_choice '0')"
+is "none means none"       ""                          "$(normalize_agent_choice 'none')"
+is "5 means all four"      "claude,codex,opencode,agy" "$(normalize_agent_choice '5')"
+is "all means all four"    "claude,codex,opencode,agy" "$(normalize_agent_choice 'all')"
+is "the 1,2 default"       "claude,codex"              "$(normalize_agent_choice '1,2')"
+is "answer order kept"     "codex,claude"              "$(normalize_agent_choice '2,1')"
+is "names work"            "claude,opencode"           "$(normalize_agent_choice 'claude,opencode')"
+is "aliases work"          "agy,claude"                "$(normalize_agent_choice 'antigravity,claude-code')"
+is "duplicates collapse"   "claude,codex"              "$(normalize_agent_choice '1,1,2')"
+is "spaces tolerated"      "claude,codex"              "$(normalize_agent_choice '1, 2')"
+is "all wins mid-list"     "claude,codex,opencode,agy" "$(normalize_agent_choice '3,all')"
+is "0 among names is ignored" "claude"                 "$(normalize_agent_choice '0,1')"
+is "unknown token dropped" "claude"                    "$(normalize_agent_choice '1,nope' 2>/dev/null)"
+unknown_msg=$(normalize_agent_choice '1,nope' 2>&1 >/dev/null)
+case "$unknown_msg" in
+    *"unknown agent 'nope'"*) ok "unknown token is reported" ;;
+    *) bad "unknown token is reported — got [$unknown_msg]" ;;
+esac
+
+echo "== ask / confirm, under a real pty =="
+# One pty for all six: ask returns what was typed, ask falls back to its
+# default on a bare Enter, and confirm is y/Y-prefix with No as the default.
+got=$(tty_run 'Alice
+
+y
+
+n
+YES
+' 'a=$(ask "name?")
+b=$(ask "with default?" "dflt")
+confirm "y?"     && c=Y || c=N
+confirm "blank?" && d=Y || d=N
+confirm "n?"     && e=Y || e=N
+confirm "upper?" && f=Y || f=N
+printf "a=%s b=%s c=%s d=%s e=%s f=%s\n" "$a" "$b" "$c" "$d" "$e" "$f" >"$OUT"')
+is "ask returns the answer / default; confirm is y-prefix, default No" \
+   "a=Alice b=dflt c=Y d=N e=N f=Y" "$got"
+
+echo "== choose_* record the decision =="
+h=$(fresh_home)
+got=$(tty_run '1,2
+' 'choose_agents >/dev/null 2>&1
+cat "$STATE_DIR/agents" >"$OUT"' "$h")
+is "choose_agents records the normalized list" "claude,codex" "$got"
+rm -rf "$h"
+
+h=$(fresh_home)
+got=$(tty_run 'y
+' 'choose_fonts >/dev/null 2>&1
+cat "$STATE_DIR/fonts" >"$OUT"' "$h")
+is "choose_fonts records yes" "yes" "$got"
+rm -rf "$h"
+
+h=$(fresh_home)
+got=$(tty_run '
+' 'choose_fonts >/dev/null 2>&1
+cat "$STATE_DIR/fonts" >"$OUT"' "$h")
+is "choose_fonts records no on a bare Enter" "no" "$got"
+rm -rf "$h"
+
+h=$(fresh_home)
+got=$(tty_run 'y
+' 'current_login_shell() { echo /bin/bash; }
+choose_login_shell >/dev/null 2>&1
+cat "$STATE_DIR/login-shell" >"$OUT"' "$h")
+is "choose_login_shell records yes" "yes" "$got"
+rm -rf "$h"
+
+echo "== git identity =="
+# No pty: an already-configured identity must ask nothing at all. Run in a
+# subshell — if it wrongly prompts, ask dies, and that must not take the
+# driver with it.
+# `ask` is stubbed to a sentinel rather than left to fail: with no tty it
+# would die inside its own $(...) and leave the globals empty, which is
+# exactly what a correct skip looks like — the assertion would pass either
+# way (caught by mutation-testing this file, 2026-08-31).
+got=$(
+    git() { case "${3:-}" in user.name) echo Ada ;; user.email) echo ada@example.invalid ;; esac; }
+    ask() { echo "ASKED:$1"; }
+    gather_git_identity >/dev/null 2>&1
+    printf 'name=[%s] email=[%s]' "$GIT_NAME" "$GIT_EMAIL"
+)
+is "a configured identity is not re-asked" "name=[] email=[]" "$got"
+
+# ...and an unset one is asked for, and captured into the globals
+# configure_git applies later.
+got=$(tty_run 'Ada Lovelace
+ada@example.invalid
+' 'git() { return 1; }   # no identity configured
+gather_git_identity >/dev/null 2>&1
+printf "name=%s email=%s\n" "$GIT_NAME" "$GIT_EMAIL" >"$OUT"')
+is "an unset identity is prompted for" "name=Ada Lovelace email=ada@example.invalid" "$got"
+
+echo "== gather_answers asks in order, and only for selected phases =="
+# The full menu in order: agents, fonts, login shell. A wrong order would land
+# each answer in the wrong file. gather_git_identity is stubbed out (covered
+# above) so the test does not depend on a git being installed — on a bare
+# ubuntu:24.04 there is none, and it would prompt and eat these answers.
+h=$(fresh_home)
+got=$(tty_run '1,2
+y
+y
+' 'warm_sudo() { :; }
+gather_git_identity() { :; }
+current_login_shell() { echo /bin/bash; }
+gather_answers >/dev/null 2>&1
+printf "agents=%s fonts=%s login=%s\n" \
+    "$(cat "$STATE_DIR/agents" 2>/dev/null)" \
+    "$(cat "$STATE_DIR/fonts" 2>/dev/null)" \
+    "$(cat "$STATE_DIR/login-shell" 2>/dev/null)" >"$OUT"' "$h")
+is "a full run asks all three in order" "agents=claude,codex fonts=yes login=yes" "$got"
+rm -rf "$h"
+
+# The phase refactor's contract: --phase fonts must not ask the agent menu.
+h=$(fresh_home)
+got=$(tty_run 'y
+' 'warm_sudo() { :; }
+gather_git_identity() { :; }
+current_login_shell() { echo /bin/bash; }
+SELECTED_PHASES=(fonts)
+gather_answers >/dev/null 2>&1
+exists() { [[ -f "$STATE_DIR/$1" ]] && echo yes || echo no; }
+printf "agents=%s fonts=%s login=%s\n" \
+    "$(exists agents)" "$(exists fonts)" "$(exists login-shell)" >"$OUT"' "$h")
+is "--phase fonts asks only the font question" "agents=no fonts=yes login=no" "$got"
+rm -rf "$h"
+
+echo "== no tty: die, never fabricate an answer =="
+# Only meaningful without a tty — with one attached, ask would simply block
+# waiting for input. Same guard ci-roundtrip uses for its no-answer test.
+if ( : </dev/tty ) 2>/dev/null; then
+    echo "  skip  no-tty test (a terminal is attached)"
+else
+    err=$( ( ask "unanswerable?" ) 2>&1 >/dev/null )
+    rc=$?
+    if [[ "$rc" -ne 0 && "$err" == *"cannot read"* ]]; then
+        ok "ask dies with a clear error when it cannot reach a terminal"
+    else
+        bad "ask should die without a tty — rc=$rc err=[$err]"
+    fi
+fi
+
+printf '\nprompt tests: %s passed, %s failed\n' "$PASS" "$FAIL"
+[[ "$FAIL" -eq 0 ]]

@@ -7,7 +7,7 @@ Two-stage installer so a colleague runs one command on a bare Mac or minimal Ubu
 - `bootstrap` — POSIX-sh stage 1. Installs brew + bash 5 on macOS, refreshes apt on Ubuntu, then runs stage 2 (no `exec` — the cleanup trap must outlive it).
 - `scripts/install` — bash 5 stage 2. Self-documenting; cross-cutting rules live in its header banner.
 
-CI (GitHub Actions) runs `scripts/check` plus three headless round-trips — sudo user and root in minimized `ubuntu:24.04` containers, and a `macos-latest` runner leg — fresh run + idempotent re-run, asserting zero warnings, on every push. **All green since 2026-07-04.** **Not yet run end-to-end on a real bare Mac** (a runner is not bare, and the interactive prompt phase is untested).
+CI (GitHub Actions) runs `scripts/check` and `scripts/test-prompts`, plus three headless round-trips — sudo user and root in minimized `ubuntu:24.04` containers, and a `macos-latest` runner leg — fresh run + idempotent re-run, asserting zero warnings, on every push. **All green since 2026-07-04.** **Not yet run end-to-end on a real bare Mac** (a runner is not bare). The prompt layer itself is now covered by `scripts/test-prompts`, which drives it under a real pty.
 
 Completed work and resolved incidents are archived in [.archive/TODO-done.md](.archive/TODO-done.md) (and `git log`); current behavior is documented by the `scripts/install` header banner and `README.md`.
 
@@ -40,14 +40,13 @@ Completed work and resolved incidents are archived in [.archive/TODO-done.md](.a
    docker run --rm -it -v "$PWD":/myshell ubuntu:24.04 bash -c \
      'apt-get update && apt-get install -y curl git && cp -r /myshell /root/myshell && /root/myshell/bootstrap'
    ```
-1. Headless variant (what CI runs): `scripts/ci-roundtrip` inside the container — seeds the recorded answers, runs bootstrap twice, asserts artifacts + zero warnings. The two commands above stay the *interactive* round-trip (run them from macOS Docker Desktop too).
+1. Headless variant (what CI runs): `scripts/ci-roundtrip` inside the container — seeds the recorded answers, runs bootstrap twice, asserts artifacts + zero warnings. The two commands above are the same thing with the prompts left in, if you ever want to watch a run interactively.
 1. Fresh Mac: harder to sandbox; test on a spare account or VM.
 1. To iterate fast on stage 2 only: run `scripts/install` directly under an existing bash 5.
 
 ## Where to pick up
 
-(2026-07-04)
+(2026-08-31)
 
-1. **Owner (jz): run the interactive docker round-trips on macOS Docker Desktop** — the two commands in "How to resume / test" above. CI covers the headless path; the interactive prompt phase (gather_answers on a real tty: git identity, agent menu, fonts, chsh) is what these exercise.
-1. After both are green, the remaining untested leg is a fresh bare Mac (brew path, Terminal profile, fonts).
-1. Then resume the deferred items (yt-dlp, optional apps, command-not-found) on a tested base — each new step follows the contract in the `scripts/install` header.
+1. The remaining untested leg is a fresh bare Mac (brew path, Terminal profile, fonts). CI's `roundtrip-macos` runs on a runner, which is not bare.
+1. Resume the deferred items (yt-dlp, optional apps, command-not-found) — each new step follows the contract in the `scripts/install` header, and joins one of the six phases.

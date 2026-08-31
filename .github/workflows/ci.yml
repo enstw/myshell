@@ -11,6 +11,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: scripts/check
+      # Prompt-layer tests. They drive ask/confirm under a real pty, so they
+      # cover what the headless round-trips below structurally cannot: those
+      # seed every answer so that nothing prompts.
+      - run: scripts/test-prompts
 
   # Both round-trips run in the stock ubuntu:24.04 docker image, which is
   # minimized (no man pages/docs) — the harshest realistic base, and it
@@ -50,12 +54,17 @@ jobs:
   # macOS leg — runs scripts/ci-roundtrip directly on the runner (no
   # container). A runner is not a bare Mac (brew, node, nvm etc. come
   # preinstalled) — which is the point: the brew and purge paths get real
-  # exercise the fresh Ubuntu containers can't give them. The interactive
-  # prompt phase and a true bare-Mac fresh install remain untested (TODO).
+  # exercise the fresh Ubuntu containers can't give them. A true bare-Mac
+  # fresh install remains untested (TODO); the prompt layer is covered by the
+  # test-prompts step below.
   roundtrip-macos:
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      # Re-run here as well as in `static`: the pty helper branches on the OS
+      # (BSD `script` takes its command differently from util-linux's), so the
+      # macOS side of it is only exercised on this runner.
+      - run: scripts/test-prompts
       - name: bootstrap on a macos-latest runner
         run: scripts/ci-roundtrip

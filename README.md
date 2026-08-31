@@ -62,5 +62,6 @@ Read the header banner at the top of `scripts/install` for the cross-cutting rul
 | `scripts/myshell-update` | Deployed to `~/bin/myshell-update` (alias `u`). Refreshes brew/apt/zinit/pnpm/codex/claude/opencode/agy/codegraph/gstack. |
 | `scripts/check` | Static gate: syntax-checks all three scripts, verifies the output-helper blocks are byte-identical (`--fix` rewrites them from `bootstrap`'s copy). Run before committing. |
 | `scripts/ci-roundtrip` | Headless container round-trip (seeds the recorded answers, runs bootstrap twice, asserts). Used by CI. |
-| `.github/workflows/ci.yml` | CI: `scripts/check` + both round-trips (sudo user and root) in minimized `ubuntu:24.04` containers, plus a macOS-runner round-trip (brew + purge paths). |
+| `scripts/test-prompts` | Interactive-prompt tests — drives `ask`/`confirm` under a real pty and the agent-menu parser directly. Covers what the headless round-trip cannot. |
+| `.github/workflows/ci.yml` | CI: `scripts/check` + `scripts/test-prompts` + both round-trips (sudo user and root) in minimized `ubuntu:24.04` containers, plus a macOS-runner round-trip (brew + purge paths). |
 | `TODO.md` | What's deferred, what's untested. |
