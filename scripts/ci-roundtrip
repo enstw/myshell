@@ -67,6 +67,7 @@ login_shell() {
 }
 [[ "$(login_shell)" == */zsh ]] || fail "login shell not zsh after fresh run: $(login_shell)"
 [[ -x "$HOME/.local/bin/codegraph" ]] || fail "codegraph missing"
+
 # Regression (2026-08-31): the MOTD must not double. Ubuntu's pam_motd already
 # prints it for every login session (/etc/pam.d/sshd, /etc/pam.d/login), so the
 # interactive drop-in has to skip login shells — the bug only became visible
@@ -106,5 +107,29 @@ if ! ( : </dev/tty ) 2>/dev/null; then
 else
     echo "skipping no-answer test (a tty is attached — the prompt would block)"
 fi
+
+# Phases (2026-08-31): stage 2 is a list of phases and --phase runs a subset.
+# Exercised here on the converged box, which is what --phase is for.
+echo "=== phases ==="
+phase_list=$("$REPO_ROOT/scripts/install" --list-phases)
+for p in system shell fonts packages runtimes agents; do
+    grep -q "^  $p " <<<"$phase_list" || fail "--list-phases omits $p"
+done
+if "$REPO_ROOT/scripts/install" --phase nosuchphase >/dev/null 2>/tmp/ci-badphase-err.log; then
+    fail "an unknown --phase should exit nonzero"
+fi
+grep -q 'unknown phase' /tmp/ci-badphase-err.log \
+    || { cat /tmp/ci-badphase-err.log >&2; fail "expected a clear unknown-phase error"; }
+
+# A subset must run exactly the phases asked for, and stay clean doing it.
+if ! "$REPO_ROOT/scripts/install" --phase fonts >/tmp/ci-phase-out.log 2>/tmp/ci-phase-err.log; then
+    cat /tmp/ci-phase-out.log; cat /tmp/ci-phase-err.log >&2
+    fail "--phase fonts exited nonzero"
+fi
+cat /tmp/ci-phase-out.log; cat /tmp/ci-phase-err.log >&2
+grep -q '\[3/6\] fonts' /tmp/ci-phase-out.log || fail "--phase fonts did not run the fonts phase"
+! grep -q '\[2/6\] shell' /tmp/ci-phase-out.log || fail "--phase fonts also ran the shell phase"
+[[ "$(grep -c '^warning:' /tmp/ci-phase-err.log || true)" -eq 0 ]] \
+    || fail "--phase fonts produced warnings"
 
 echo "CI round-trip OK"

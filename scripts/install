@@ -20,10 +20,31 @@ set -Eeuo pipefail
 #   not solve it. Adding a step: write a check-first function (a re-run must
 #   be quiet), prompt only via gather_answers + a recorded answer under
 #   $STATE_DIR, fail hard only if the shell is broken without it (otherwise
-#   warn), add it to main() in dependency order, and cover the result in
-#   scripts/ci-roundtrip. Pairing rule: a tool with its own update path gets
-#   its scripts/myshell-update section in the same commit — provisioning
-#   lives here, maintenance lives there, and they drift apart unless paired.
+#   warn), add it to the right phase function (see the phase rule), and cover
+#   the result in scripts/ci-roundtrip. Pairing rule: a tool with its own
+#   update path gets its scripts/myshell-update section in the same commit —
+#   provisioning lives here, maintenance lives there, and they drift apart
+#   unless paired.
+#
+# - Phases: main() runs six of them in a fixed order — system, shell, fonts,
+#   packages, runtimes, agents (`scripts/install --list-phases`). Each is one
+#   concern, one phase_<name> function, and one line in PHASES + PHASE_DESC.
+#   `--phase LIST` runs a subset for fast iteration on a box that is already
+#   installed; bootstrap forwards its arguments, so `./bootstrap --phase
+#   fonts` works too. A subset never reorders — the selection is intersected
+#   with PHASES — because three ordering constraints are correctness, not
+#   tidiness:
+#     1. configure_locale precedes all apt work, or every maintainer script
+#        prints `perl: warning: Setting locale failed`;
+#     2. purge_conflicts precedes install_agents — it deletes a legacy npm
+#        @openai/codex and install_codex is check-first, so the reverse order
+#        leaves the box with no codex at all;
+#     3. unminimize_ubuntu follows the last apt install and the purge, so
+#        docs are restored for what is actually installed.
+#   The phase split is also why the package sets are split (MACOS_*_FORMULAE,
+#   UBUNTU_*_PKGS) rather than one base list. A new phase must also be taught
+#   to sudo_work_pending, which predicts per phase — an unselected phase's
+#   work must not trigger a password prompt.
 #
 # - Step grammar: use the verbs that already exist — install_ (put software
 #   on disk), configure_/set_ (system or user state), deploy_ (write files
@@ -35,11 +56,12 @@ set -Eeuo pipefail
 #   a one-OS step opens with a guard clause ([[ "$OS" == ubuntu ]] || return 0);
 #   a both-OS step whose branches stay under ~15 lines uses an inline
 #   `if [[ "$OS" == macos ]]`; only large parallel implementations get an
-#   _macos/_ubuntu pair behind a case dispatch (install_apps,
-#   configure_terminal_profile). Shared helpers exist where the RECIPE
-#   repeats, not the
-#   verb: apt_keyring_repo (third-party apt repos), fetch_config (idempotent
-#   downloads), install_agent (fail-soft agent installers).
+#   _macos/_ubuntu pair behind a case dispatch (configure_terminal_profile).
+#   Shared helpers exist where the RECIPE repeats, not the verb:
+#   apt_keyring_repo (third-party apt repos), fetch_config (idempotent
+#   downloads), install_agent (fail-soft agent installers),
+#   brew_install_missing / apt_install_missing (check-first batch installs,
+#   called once per package-installing phase).
 #
 # - Python tooling: `uv` is the only sanctioned Python tool. Never pip, pipx,
 #   python -m venv, pyenv, or poetry. Translate upstream `pip install X` or
@@ -201,6 +223,106 @@ confirm() {
     [[ "$reply" =~ ^[Yy] ]]
 }
 
+# --- phases -----------------------------------------------------------------
+# main() is a list of phases, not a list of steps: each phase is one concern,
+# and --phase runs a subset (see the header's phase rule for the ordering
+# constraints that are load-bearing). PHASES is the canonical order.
+PHASES=(system shell fonts packages runtimes agents)
+declare -A PHASE_DESC=(
+    [system]="locale, timezone, passwordless apt/snap for 'u'"
+    [shell]="zsh + prompt + plugins, dotfiles, ~/bin scripts, login shell"
+    [fonts]="ENS font, terminal profile"
+    [packages]="CLI toolbox, tealdeer, docker group, purge, unminimize"
+    [runtimes]="uv, pnpm + Node LTS, bun"
+    [agents]="AI agents + CodeGraph"
+)
+SELECTED_PHASES=("${PHASES[@]}")
+
+# in_list VALUE ITEM... — true when VALUE is one of ITEM. Never grows a warn:
+# it is called from $(...)-free but condition-only contexts, and the header's
+# subshell rule makes a warning inside a helper like this a silent loss.
+in_list() {
+    local value="$1" item
+    shift
+    for item in "$@"; do
+        [[ "$item" == "$value" ]] && return 0
+    done
+    return 1
+}
+phase_known()    { in_list "$1" "${PHASES[@]}"; }
+phase_selected() { in_list "$1" "${SELECTED_PHASES[@]}"; }
+
+list_phases() {
+    local p
+    for p in "${PHASES[@]}"; do
+        printf '  %-9s %s\n' "$p" "${PHASE_DESC[$p]}"
+    done
+}
+
+usage() {
+    cat <<EOF
+myshell stage 2 installer — bash 5, idempotent, safe to rerun.
+
+usage: scripts/install [--phase LIST] [--list-phases] [--help]
+
+  --phase LIST    run only these phases (comma-separated; default: all).
+                  They always run in canonical order, whatever order is given.
+  --list-phases   print the phases and what each does, then exit.
+  -h, --help      this message.
+
+bootstrap forwards its arguments, so \`./bootstrap --phase fonts\` works too.
+
+--phase is for re-running part of a box that is already installed: a phase may
+use tools an earlier one provides (bun's installer needs unzip from packages),
+so a subset run on a bare box can fail soft where a full run would not.
+
+Phases:
+$(list_phases)
+EOF
+}
+
+parse_args() {
+    local requested="" p ordered=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --phase|--phases)
+                [[ $# -ge 2 ]] || die "--phase needs a value (try --list-phases)"
+                requested="$2"; shift 2 ;;
+            --phase=*|--phases=*) requested="${1#*=}"; shift ;;
+            --list-phases) list_phases; exit 0 ;;
+            -h|--help) usage; exit 0 ;;
+            *) die "unknown argument: $1 (try --help)" ;;
+        esac
+    done
+    [[ -n "$requested" ]] || return 0
+    requested="${requested// /}"
+    for p in ${requested//,/ }; do
+        phase_known "$p" || die "unknown phase: $p (try --list-phases)"
+    done
+    # Canonical order, not the order given: the ordering constraints in the
+    # header (locale before apt, purge before agents, unminimize last) are
+    # correctness, so honoring a user's sequence would only be a way to break
+    # them. Selecting a subset is supported; reordering is not.
+    for p in "${PHASES[@]}"; do
+        if [[ ",$requested," == *",$p,"* ]]; then ordered+=("$p"); fi
+    done
+    SELECTED_PHASES=("${ordered[@]}")
+}
+
+# run_phase INDEX NAME — banner, then the phase's steps. The per-phase warning
+# count makes an unattended run's tail say WHICH phase degraded, not just that
+# something did.
+run_phase() {
+    local idx="$1" name="$2" before="$WARNINGS" got
+    printf '\n──── [%s/%s] %s — %s\n' "$idx" "${#PHASES[@]}" "$name" "${PHASE_DESC[$name]}"
+    "phase_$name"
+    got=$((WARNINGS - before))
+    if [[ "$got" -gt 0 ]]; then
+        sublog "phase $name finished with $got warning(s)"
+    fi
+    return 0
+}
+
 # True when a system-level (sudo) step will actually run this round, so a quiet
 # re-run with nothing to do never prompts for a password. Mirrors the guards of
 # every step that uses $SUDO — through shared helpers (apt_missing_pkgs,
@@ -212,23 +334,35 @@ confirm() {
 # for a password on a re-run that then changes nothing is a bug (2026-07-04).
 sudo_work_pending() {
     [[ -n "$SUDO" ]] || return 1
+    # Grouped by phase, and each group is skipped when its phase is not
+    # selected: `--phase fonts` touches nothing under /etc, so predicting the
+    # apt work of an unselected phase would resurrect exactly the surprise
+    # password prompt this function exists to prevent.
     if [[ "$OS" == ubuntu ]]; then
         local p
-        [[ -n "$(apt_missing_pkgs)" ]] && return 0                      # install_apps_ubuntu
-        { command -v eza && command -v glow; } >/dev/null || return 0   # apt_keyring_repo (eza/glow)
-        for p in "${UBUNTU_PURGE_PY_PKGS[@]}" "${UBUNTU_PURGE_NODE_PKGS[@]}"; do
-            dpkg -s "$p" >/dev/null 2>&1 && return 0                    # purge_conflicts
-        done
-        apt_sudoers_pending && return 0                                 # configure_apt_sudoers
-        id -nG "$(id -un)" | grep -qw docker || return 0                # configure_docker_group
-        [[ -f /etc/dpkg/dpkg.cfg.d/excludes ]] && return 0              # unminimize_ubuntu
-        locale_configured || return 0                                   # configure_locale
-        [[ "$(ubuntu_timezone)" == Asia/Taipei ]] || return 0           # configure_timezone
-    else
+        if phase_selected system; then
+            apt_sudoers_pending && return 0                             # configure_apt_sudoers
+            locale_configured || return 0                               # configure_locale
+            [[ "$(ubuntu_timezone)" == Asia/Taipei ]] || return 0        # configure_timezone
+        fi
+        if phase_selected shell; then
+            [[ -n "$(apt_missing_pkgs "${UBUNTU_SHELL_PKGS[@]}")" ]] && return 0   # install_shell_core
+        fi
+        if phase_selected packages; then
+            [[ -n "$(apt_missing_pkgs "${UBUNTU_EXTRA_PKGS[@]}")" ]] && return 0   # install_extra_packages
+            { command -v eza && command -v glow; } >/dev/null || return 0          # apt_keyring_repo (eza/glow)
+            for p in "${UBUNTU_PURGE_PY_PKGS[@]}" "${UBUNTU_PURGE_NODE_PKGS[@]}"; do
+                dpkg -s "$p" >/dev/null 2>&1 && return 0                           # purge_conflicts
+            done
+            id -nG "$(id -un)" | grep -qw docker || return 0                       # configure_docker_group
+            [[ -f /etc/dpkg/dpkg.cfg.d/excludes ]] && return 0                     # unminimize_ubuntu
+        fi
+    elif phase_selected system; then
         local tz
         tz=$(readlink /etc/localtime 2>/dev/null || true)
         [[ "${tz#*/zoneinfo/}" != Asia/Taipei ]] && return 0            # configure_timezone
     fi
+    phase_selected shell || return 1
     # set_login_shell touches /etc/shells only when a switch to zsh will
     # actually happen — mirror its guards: not when the login shell is
     # already zsh (basename match, like the step), not when the recorded
@@ -288,7 +422,7 @@ GIT_EMAIL=""
 gather_git_identity() {
     # git config is its own record for this one — no state file needed. On a
     # bare box git may not exist yet, so stash the answers in globals and let
-    # configure_git apply them after install_apps has provided git.
+    # configure_git apply them after the shell phase has provided git.
     local current_name current_email
     current_name=$(git config --global user.name  2>/dev/null || true)
     current_email=$(git config --global user.email 2>/dev/null || true)
@@ -347,24 +481,107 @@ choose_login_shell() {
 gather_answers() {
     log "Questions first — the rest of the run is unattended (re-runs skip answered ones)"
     warm_sudo
-    gather_git_identity
-    choose_agents
-    choose_fonts
-    choose_login_shell
+    # Only ask what the selected phases will use: `--phase fonts` must not
+    # prompt for the agent menu. Each question is also asked at its point of
+    # use, so a phase run on its own still gets its answer.
+    if phase_selected shell;  then gather_git_identity; fi
+    if phase_selected agents; then choose_agents; fi
+    if phase_selected fonts;  then choose_fonts; fi
+    if phase_selected shell;  then choose_login_shell; fi
 }
 
-install_apps() {
-    log "Installing core apps..."
-    case "$OS" in
-        macos)  install_apps_macos ;;
-        ubuntu) install_apps_ubuntu ;;
-    esac
-    install_pnpm
-    install_bun
+# --- phase: shell -----------------------------------------------------------
+
+# The zsh core: the shell itself, the prompt, the plugin manager, and the two
+# things every later phase's curl|sh installer needs (curl + a trusted root
+# store). Everything else is deliberately NOT here — see the package sets.
+install_shell_core() {
+    log "Installing the zsh core (shell, prompt, plugin manager)..."
+    if [[ "$OS" == macos ]]; then
+        brew_install_missing "${MACOS_SHELL_FORMULAE[@]}"
+        # Refresh the CA bundle on a fresh Mac so the curl|sh installers that
+        # follow (pnpm, bun, the agents) and pnpm's registry TLS have a
+        # trusted root store.
+        brew postinstall ca-certificates >/dev/null 2>&1 || true
+    else
+        apt_install_missing "${UBUNTU_SHELL_PKGS[@]}"
+        install_starship_ubuntu
+    fi
     install_zinit
 }
 
+# --- phase: packages --------------------------------------------------------
+
+# The CLI toolbox — everything the shell is nicer with but works without.
+install_extra_packages() {
+    log "Installing the CLI toolbox..."
+    if [[ "$OS" == macos ]]; then
+        brew_install_missing "${MACOS_EXTRA_FORMULAE[@]}"
+        return 0
+    fi
+    apt_install_missing "${UBUNTU_EXTRA_PKGS[@]}"
+    # Ubuntu names bat/fd differently; symlink into ~/.local/bin so the
+    # aliases find them. `if`, not `[[ ]] &&`: under NO_SUDO the apt install
+    # above is skipped, so a missing batcat would otherwise fail the
+    # && list and abort the run through the ERR trap.
+    mkdir -p "$HOME/.local/bin"
+    if [[ -x /usr/bin/batcat ]]; then ln -sf /usr/bin/batcat "$HOME/.local/bin/bat"; fi
+    if [[ -x /usr/bin/fdfind ]]; then ln -sf /usr/bin/fdfind "$HOME/.local/bin/fd"; fi
+    if [[ "$NO_SUDO" == "1" ]]; then
+        warn "no sudo — skipping eza/glow (require apt-repo setup under /etc)"
+        return 0
+    fi
+    apt_keyring_repo gierens https://raw.githubusercontent.com/eza-community/eza/main/deb.asc \
+                     "http://deb.gierens.de stable main" eza
+    apt_keyring_repo charm https://repo.charm.sh/apt/gpg.key \
+                     "https://repo.charm.sh/apt/ * *" glow
+}
+
+# brew_install_missing FORMULA... — install only what brew lacks. `brew
+# install` skips installed formulae anyway, but invoking it at all pays
+# tap/update overhead on every re-run.
+brew_install_missing() {
+    local installed missing=() f
+    installed=$(brew list --formula)
+    for f in "$@"; do
+        grep -qx "$f" <<<"$installed" || missing+=("$f")
+    done
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        sublog "brew formulae already installed — skipping"
+        return 0
+    fi
+    sublog "brew install ${missing[*]}"
+    brew install "${missing[@]}"
+}
+
+# apt_install_missing PKG... — install only what dpkg lacks (apt-get install
+# -y is idempotent but slow when invoked for already-present packages).
+apt_install_missing() {
+    if [[ "$NO_SUDO" == "1" ]]; then
+        warn "no sudo — skipping apt install; system packages assumed pre-installed via root"
+        return 0
+    fi
+    local missing=()
+    read -r -a missing <<<"$(apt_missing_pkgs "$@")"
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        sublog "apt packages already installed — skipping"
+        return 0
+    fi
+    # Standalone stage-2 runs (without bootstrap) may sit on a stale or empty
+    # index; bootstrap exports MYSHELL_APT_UPDATED after its own apt-get
+    # update so the normal path doesn't update twice. Set it here too — the
+    # phases call this more than once and one index refresh serves them all.
+    if [[ "${MYSHELL_APT_UPDATED:-0}" != 1 ]]; then
+        sublog "apt-get update (no fresh index from stage 1)"
+        $SUDO apt-get update
+        MYSHELL_APT_UPDATED=1
+    fi
+    sublog "apt install ${missing[*]}"
+    $SUDO apt-get install -y "${missing[@]}"
+}
+
 install_pnpm() {
+    log "Installing pnpm (standalone build)..."
     # Standalone pnpm (the self-contained @pnpm/exe build) on both OSes — same
     # curl|sh pattern as bun/uv/starship/Homebrew. This build bundles its own
     # Node and later provisions a runtime via `pnpm runtime set node lts -g`.
@@ -420,99 +637,53 @@ install_pnpm() {
         || warn "pnpm installer finished but no pnpm binary found; continuing"
 }
 
-install_apps_macos() {
-    local formulae=(
-        git zsh jq tmux fzf ripgrep sevenzip uv
-        ca-certificates
-        bat eza fd zoxide starship tealdeer glow qrencode
-        watch
-        age  # asymmetric file encryption (ships age-keygen too)
-        colima docker  # docker CLI only — colima is the VM/daemon (`colima start`)
-    )
-    # Check-first: brew install skips installed formulae anyway, but invoking it
-    # at all pays tap/update overhead on every re-run — only call it for what's
-    # actually missing.
-    local installed missing=() f
-    installed=$(brew list --formula)
-    for f in "${formulae[@]}"; do
-        grep -qx "$f" <<<"$installed" || missing+=("$f")
-    done
-    if [[ ${#missing[@]} -eq 0 ]]; then
-        sublog "all brew formulae already installed — skipping"
-    else
-        sublog "brew install ${missing[*]}"
-        brew install "${missing[@]}"
-    fi
-    # Refresh the CA bundle on a fresh Mac so later curl|sh installers (pnpm,
-    # bun) and pnpm's registry TLS have a trusted root store.
-    brew postinstall ca-certificates >/dev/null 2>&1 || true
-}
-
-# Ubuntu package lists — top-level so sudo_work_pending can predict from the
-# same data the steps act on (see its header comment).
+# --- package sets, split by phase -------------------------------------------
+# Split by phase, not by OS: the shell set is the minimum that makes zsh
+# usable (phase "shell"), the extra set is the CLI toolbox (phase
+# "packages"), and the language runtimes — uv, pnpm, bun — come from their
+# own upstream installers in phase "runtimes", not from a package manager.
+# Top-level so sudo_work_pending can predict from the same data the steps act
+# on (see its header comment).
 #
-# Base apt packages installed by install_apps_ubuntu. unzip is required by the
-# bun.sh installer (it errors "unzip is required to install bun" otherwise);
-# without it install_bun fails soft on minimal Ubuntu and the gstack skill
-# loses its bun runtime.
-UBUNTU_BASE_PKGS=(
-    git zsh jq tmux fzf ripgrep 7zip curl ca-certificates
-    bat fd-find zoxide tealdeer qrencode build-essential wget gpg
-    age unzip locales tzdata
+# The "system" phase needs no set of its own: it runs before all other
+# package work, and its two apt prerequisites are installed on demand by the
+# steps that need them (configure_locale installs `locales`,
+# configure_timezone installs `tzdata`) so the prediction stays keyed on the
+# step's own guard.
+MACOS_SHELL_FORMULAE=(git zsh starship ca-certificates)
+MACOS_EXTRA_FORMULAE=(
+    jq tmux fzf ripgrep sevenzip
+    bat eza fd zoxide tealdeer glow qrencode
+    watch
+    age  # asymmetric file encryption (ships age-keygen too)
+    colima docker  # docker CLI only — colima is the VM/daemon (`colima start`)
+)
+
+UBUNTU_SHELL_PKGS=(git zsh curl ca-certificates)
+# unzip is required by the bun.sh installer (it errors "unzip is required to
+# install bun" otherwise); without it install_bun fails soft on minimal
+# Ubuntu and the gstack skill loses its bun runtime. gpg serves
+# apt_keyring_repo, which runs at the end of this same phase.
+UBUNTU_EXTRA_PKGS=(
+    jq tmux fzf ripgrep 7zip
+    bat fd-find zoxide tealdeer qrencode
+    build-essential wget gpg unzip
+    age
     docker.io  # configure_docker_group makes it usable without sudo
 )
 # apt packages purge_conflicts removes on sight (see the header's uv/pnpm rules).
 UBUNTU_PURGE_PY_PKGS=(pipx python3-poetry pyenv)
 UBUNTU_PURGE_NODE_PKGS=(nodejs npm yarn yarnpkg fnm)
 
-# Echo the base apt packages dpkg lacks, space-separated (empty when none).
-# Shared by install_apps_ubuntu and sudo_work_pending.
+# apt_missing_pkgs PKG... — echo the given packages dpkg lacks,
+# space-separated (empty when none). Shared by apt_install_missing and
+# sudo_work_pending, which asks it about one phase's set at a time.
 apt_missing_pkgs() {
     local missing=() p
-    for p in "${UBUNTU_BASE_PKGS[@]}"; do
+    for p in "$@"; do
         dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p")
     done
     echo "${missing[*]-}"
-}
-
-install_apps_ubuntu() {
-    if [[ "$NO_SUDO" == "1" ]]; then
-        warn "no sudo — skipping apt installs; system packages assumed pre-installed via root"
-    else
-        # Check-first: apt-get install -y is idempotent but slow when invoked
-        # for already-present packages — only ask it for what dpkg lacks.
-        local missing=()
-        read -r -a missing <<<"$(apt_missing_pkgs)"
-        if [[ ${#missing[@]} -eq 0 ]]; then
-            sublog "apt base packages already installed — skipping"
-        else
-            # Standalone stage-2 runs (without bootstrap) may sit on a stale
-            # or empty index; bootstrap exports MYSHELL_APT_UPDATED after its
-            # own apt-get update so the normal path doesn't update twice.
-            if [[ "${MYSHELL_APT_UPDATED:-0}" != 1 ]]; then
-                sublog "apt-get update (no fresh index from stage 1)"
-                $SUDO apt-get update
-            fi
-            sublog "apt install ${missing[*]}"
-            $SUDO apt-get install -y "${missing[@]}"
-        fi
-    fi
-
-    # Ubuntu names bat/fd differently; symlink into ~/.local/bin so aliases find them.
-    mkdir -p "$HOME/.local/bin"
-    [[ -x /usr/bin/batcat ]] && ln -sf /usr/bin/batcat "$HOME/.local/bin/bat"
-    [[ -x /usr/bin/fdfind ]] && ln -sf /usr/bin/fdfind "$HOME/.local/bin/fd"
-
-    install_uv_ubuntu
-    install_starship_ubuntu
-    if [[ "$NO_SUDO" == "1" ]]; then
-        warn "no sudo — skipping eza/glow (require apt-repo setup under /etc)"
-    else
-        apt_keyring_repo gierens https://raw.githubusercontent.com/eza-community/eza/main/deb.asc \
-                         "http://deb.gierens.de stable main" eza
-        apt_keyring_repo charm https://repo.charm.sh/apt/gpg.key \
-                         "https://repo.charm.sh/apt/ * *" glow
-    fi
 }
 
 # The sudoers drop-in content, rendered for the current user. Single source
@@ -692,10 +863,26 @@ unminimize_ubuntu() {
     set -o pipefail
 }
 
-install_uv_ubuntu() {
-    command -v uv >/dev/null && return 0
-    sublog "Installing uv (astral.sh installer)..."
-    curl -fsSL https://astral.sh/uv/install.sh | sh
+# --- phase: runtimes --------------------------------------------------------
+
+# uv — the only sanctioned Python tool (header rule), so this is a required
+# step: a failure aborts through the ERR trap like the rest of the base
+# toolchain. brew on macOS, the upstream installer on Ubuntu (uv is not in
+# apt); it moved out of the brew formula list when the phases split so both
+# OSes provision it in the same place.
+install_uv() {
+    log "Installing uv (the only sanctioned Python tool)..."
+    if command -v uv >/dev/null; then
+        sublog "already installed ($(command -v uv)) — skipping"
+        return 0
+    fi
+    if [[ "$OS" == macos ]]; then
+        sublog "brew install uv"
+        brew install uv
+    else
+        sublog "astral.sh installer"
+        curl -fsSL https://astral.sh/uv/install.sh | sh
+    fi
 }
 
 install_starship_ubuntu() {
@@ -727,12 +914,16 @@ apt_keyring_repo() {
 }
 
 install_bun() {
+    log "Installing bun..."
     # bun isn't in default Homebrew (requires the oven-sh/bun tap) and isn't
     # in apt, so use the upstream installer on both OSes. Drops binary +
     # completions into ~/.bun. PATH is picked up via ~/.zshenv; completions
     # are sourced from ~/.zsh/bun.zsh. Needed by the gstack skill's setup.
-    command -v bun >/dev/null && return 0
-    sublog "Installing bun (bun.sh installer)..."
+    if command -v bun >/dev/null; then
+        sublog "already installed ($(command -v bun)) — skipping"
+        return 0
+    fi
+    sublog "bun.sh installer"
     if ! curl -fsSL https://bun.sh/install | bash; then
         warn "bun install failed; continuing without bun"
         return 0
@@ -748,7 +939,10 @@ install_bun() {
 
 install_zinit() {
     local zinit_home="$HOME/.local/share/zinit/zinit.git"
-    [[ -d "$zinit_home" ]] && return 0
+    if [[ -d "$zinit_home" ]]; then
+        sublog "zinit already installed — skipping"
+        return 0
+    fi
     sublog "Installing zinit to $zinit_home..."
     mkdir -p "$(dirname "$zinit_home")"
     git clone --depth 1 https://github.com/zdharma-continuum/zinit.git "$zinit_home"
@@ -1281,6 +1475,14 @@ configure_timezone() {
             sublog "already $target"
             return 0
         fi
+        # The "system" phase runs before all other package work, so on a
+        # minimal image the zoneinfo tree may not be there yet — tzdata used
+        # to arrive with the base apt set, which now installs a phase later.
+        # Same self-sufficient pattern configure_locale uses for `locales`.
+        if [[ ! -e "/usr/share/zoneinfo/$target" ]]; then
+            sublog "tzdata missing; installing..."
+            $SUDO apt-get install -y tzdata
+        fi
         if command -v timedatectl >/dev/null && timedatectl status >/dev/null 2>&1; then
             $SUDO timedatectl set-timezone "$target"
         else
@@ -1764,46 +1966,91 @@ set_login_shell() {
     fi
 }
 
-main() {
-    log "myshell stage 2 — $OS"
-    # All prompts live in gather_answers (see the header rule) so the long
-    # package phase runs unattended; answers are recorded under $STATE_DIR.
-    gather_answers
-    # Locale first: apt maintainer scripts shell out to perl with
-    # LANG=zh_TW.UTF-8 inherited from the caller's env. If that locale
-    # hasn't been generated yet, every subsequent apt install prints
-    # `perl: warning: Setting locale failed`. Generating locales before
-    # any package work silences the warnings.
-    configure_locale
-    install_apps
-    # Drop the passwordless-apt/snap sudoers rule now that apt exists and sudo
-    # is already pre-warmed (warm_sudo, up front) — so the `u` updater never
-    # has to prompt. No-op on macOS and on re-runs where the file is current.
+# --- phase composition ------------------------------------------------------
+# One function per phase, in PHASES order. Steps stay where dependency order
+# needs them; the comments below record the constraints that are correctness
+# rather than tidiness (the header's phase rule lists them all).
+
+# Everything the rest of the run assumes. Ordering within the phase: the
+# passwordless-apt/snap rule first, because it costs nothing and makes every
+# apt call after it — this run's and every later `u`'s — stop needing a
+# password (it used to be installed after the package work, which is too late
+# to help the run installing it). Then locale, before any real package work:
+# apt maintainer scripts shell out to perl with LANG=zh_TW.UTF-8 inherited
+# from the caller's env, and until that locale is generated every subsequent
+# apt install prints `perl: warning: Setting locale failed`.
+phase_system() {
     configure_apt_sudoers
-    # After install_apps (docker.io's postinst creates the docker group).
-    configure_docker_group
-    # Purge before unminimize so we don't reinstall docs for packages we're
-    # about to remove.
-    purge_conflicts
-    # After install_apps: unminimize reinstalls docs for everything already
-    # installed, so base packages added above still end up with man pages.
-    unminimize_ubuntu
+    configure_locale
+    configure_timezone
+}
+
+# A working, good-looking zsh: the shell, its plugin manager and prompt, the
+# generated dotfiles, ~/bin/myshell-update + update.d, and the chsh.
+phase_shell() {
+    install_shell_core
     deploy_dotfiles
     deploy_scripts
     configure_git
-    configure_timezone
-    setup_pnpm
-    configure_pnpm
-    install_agents
-    install_codegraph
-    configure_tealdeer
+    set_login_shell
+}
+
+phase_fonts() {
     install_fonts
     configure_terminal_profile
-    set_login_shell
+}
+
+phase_packages() {
+    install_extra_packages
+    # docker.io's postinst creates the docker group, so this follows it.
+    configure_docker_group
+    configure_tealdeer
+    # Purge before unminimize so we don't reinstall docs for packages we are
+    # about to remove — and before phase agents, because purge_non_pnpm_node
+    # deletes a legacy npm @openai/codex while install_codex is check-first:
+    # the other order would leave the box with no codex at all.
+    purge_conflicts
+    # Last apt-touching step: unminimize reinstalls docs for everything
+    # already installed, so packages added above still end up with man pages.
+    unminimize_ubuntu
+}
+
+# Language toolchains, each from its own upstream installer (see the header's
+# uv-only and pnpm-only rules). uv and pnpm are policy, not preference.
+phase_runtimes() {
+    install_uv
+    install_pnpm
+    setup_pnpm
+    configure_pnpm
+    install_bun
+}
+
+phase_agents() {
+    install_agents
+    install_codegraph
+}
+
+main() {
+    parse_args "$@"
+    local banner="myshell stage 2 — $OS"
+    if [[ ${#SELECTED_PHASES[@]} -ne ${#PHASES[@]} ]]; then
+        banner+=" (phases: ${SELECTED_PHASES[*]})"
+    fi
+    log "$banner"
+    # All prompts live in gather_answers (see the header rule) so the long
+    # package phases run unattended; answers are recorded under $STATE_DIR.
+    gather_answers
+    local idx=0 name
+    for name in "${PHASES[@]}"; do
+        idx=$((idx+1))
+        phase_selected "$name" || continue
+        run_phase "$idx" "$name"
+    done
+    local ran=${#SELECTED_PHASES[@]}
     if [[ "$WARNINGS" -gt 0 ]]; then
-        log "Done with $WARNINGS warning(s) — grep output for 'warning:'. Start a new shell to pick up changes."
+        log "Done — $ran phase(s), $WARNINGS warning(s); grep output for 'warning:'. Start a new shell to pick up changes."
     else
-        log "Done. Start a new shell to pick up changes."
+        log "Done — $ran phase(s), no warnings. Start a new shell to pick up changes."
     fi
 }
 

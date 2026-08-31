@@ -16,6 +16,15 @@ From a checkout (uses local `scripts/install`, good for iterating):
 ./bootstrap
 ```
 
+The installer runs in six phases — `system`, `shell`, `fonts`, `packages`, `runtimes`, `agents`. Re-run just one instead of the whole thing (`bootstrap` forwards its arguments):
+
+```sh
+./bootstrap --list-phases
+./bootstrap --phase fonts,agents
+```
+
+`--phase` is for a box that is already installed: a phase may use tools an earlier one provides, so a subset run on a bare machine can fail soft where a full run would not.
+
 Headless / unattended (CI, cloud VMs): pre-seed the answers, then run bootstrap with no tty — it never fabricates an answer, so an unseeded question aborts loudly instead:
 
 ```sh
@@ -30,7 +39,7 @@ git config --global user.email you@example.com
 Two stages:
 
 1. `bootstrap` — POSIX-sh. Installs Homebrew + bash 5 on macOS (skips either if already present), or refreshes apt on Ubuntu, then runs stage 2 (no `exec` — bootstrap's cleanup trap must outlive it).
-1. `scripts/install` — bash 5. Asks every question up front — git identity, which AI agents, fonts, login shell — and records the answers in `~/.local/state/myshell/` so re-runs don't re-ask (delete a file there to be asked again). Then it runs unattended: installs apps (including standalone `pnpm`, which also provisions the Node LTS runtime), writes `~/.zshenv` + `~/.zsh/*.zsh` + `~/.zshrc`, deploys `scripts/myshell-update` to `~/bin/myshell-update` (aliased to `u`), configures locale/timezone/pnpm/tealdeer, unminimizes a minimized Ubuntu (restores man pages/docs — this machine is for interactive use), installs the chosen AI agents (Codex via OpenAI official installer; Claude Code, OpenCode, and Antigravity CLI `agy` as standalone self-updating binaries) plus [CodeGraph](https://github.com/colbymchenry/codegraph) (the agents' local code-knowledge-graph, a standalone bundle in `~/.codegraph`), optionally installs fonts, and finishes with `chsh` to zsh (which may prompt for your password). Optional upstream installers and agent installs fail soft so a transient network/TLS issue does not abort the whole bootstrap.
+1. `scripts/install` — bash 5. Asks every question up front — git identity, which AI agents, fonts, login shell — and records the answers in `~/.local/state/myshell/` so re-runs don't re-ask (delete a file there to be asked again). Then it runs unattended, in six phases: installs apps (including standalone `pnpm`, which also provisions the Node LTS runtime), writes `~/.zshenv` + `~/.zsh/*.zsh` + `~/.zshrc`, deploys `scripts/myshell-update` to `~/bin/myshell-update` (aliased to `u`), configures locale/timezone/pnpm/tealdeer, unminimizes a minimized Ubuntu (restores man pages/docs — this machine is for interactive use), installs the chosen AI agents (Codex via OpenAI official installer; Claude Code, OpenCode, and Antigravity CLI `agy` as standalone self-updating binaries) plus [CodeGraph](https://github.com/colbymchenry/codegraph) (the agents' local code-knowledge-graph, a standalone bundle in `~/.codegraph`), optionally installs fonts, and finishes with `chsh` to zsh (which may prompt for your password). Optional upstream installers and agent installs fail soft so a transient network/TLS issue does not abort the whole bootstrap.
 
 This machine is **pnpm-only**: pnpm replaces npm (installed standalone via `get.pnpm.io`, supplies Node via `pnpm runtime`), and `npx` is aliased to `pnpm dlx`. The bundled `npm` is left unused and guarded behind a shell function. Dependency build scripts (the npm supply-chain attack vector) are refused unless explicitly approved: the installer pins pnpm's `strict-dep-builds`, so an unapproved postinstall fails the install loudly instead of running — approve intentional ones per-project with `pnpm approve-builds`.
 
@@ -49,7 +58,7 @@ Read the header banner at the top of `scripts/install` for the cross-cutting rul
 | Path | Purpose |
 |------|---------|
 | `bootstrap` | Stage 1. Run this. |
-| `scripts/install` | Stage 2. The source of truth — read its header for design rules. |
+| `scripts/install` | Stage 2. The source of truth — read its header for design rules. `--list-phases` / `--phase LIST`. |
 | `scripts/myshell-update` | Deployed to `~/bin/myshell-update` (alias `u`). Refreshes brew/apt/zinit/pnpm/codex/claude/opencode/agy/codegraph/gstack. |
 | `scripts/check` | Static gate: syntax-checks all three scripts, verifies the output-helper blocks are byte-identical (`--fix` rewrites them from `bootstrap`'s copy). Run before committing. |
 | `scripts/ci-roundtrip` | Headless container round-trip (seeds the recorded answers, runs bootstrap twice, asserts). Used by CI. |

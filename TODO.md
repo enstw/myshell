@@ -16,14 +16,14 @@ Completed work and resolved incidents are archived in [.archive/TODO-done.md](.a
 1. `yt-dlp` via `uv tool install`.
 1. Optional apps: quarto + TinyTeX, pandoc + xelatex, proxmark3, zed. Pattern when these land: one `choose_optional_apps` menu recorded like the agents answer, per-app `install_` functions per the header's step grammar, `apt_keyring_repo` for any new third-party repos — no data-driven package table (that's the abandoned `.archive/setup.sh` design).
 1. Ubuntu `command-not-found` data install (`sudo apt install command-not-found && sudo apt update`).
-1. A `--yes`-style flag that accepts every default — optional sugar; answer-store seeding is already the documented headless interface (README "Headless / unattended").
+1. A `--yes`-style flag that accepts every default — optional sugar; answer-store seeding is already the documented headless interface (README "Headless / unattended"). Stage 2's flag surface is otherwise deliberately just `--phase` / `--list-phases` / `--help`.
 1. `myshell` dispatcher (`myshell update|sync|agents`) — deliberately deferred until a third user-facing verb exists; today `u` + re-running bootstrap cover the whole post-install surface.
 1. CI: set `MYSHELL_CI_AGENTS=claude` on one job to exercise the agent installers.
 
 ## Known assumptions / risks
 
 1. Ubuntu target is 22.04+ (package names like `bat`, `7zip`, `tealdeer`).
-1. `chsh` on macOS prompts for the user's login password; acceptable but unavoidable (it is the last step, so the unattended phase is not interrupted).
+1. `chsh` runs as `sudo chsh -s <shell> <user>` (PAM's root bypass) since 2026-08-31, so a warm sudo covers it and the step is headless-safe; only the no-sudo fallback still reads a password from `/dev/tty`. It now lives in the `shell` phase rather than at the very end of the run.
 1. Stage 1 still needs `apt-get update` to succeed; if a minimal image has no sources configured at all, it'll fail — haven't handled that case. (Missing-sudo on root is now handled via the `$SUDO` shim.)
 1. `configure_terminal_profile`'s check-first guard (`defaults read com.apple.Terminal`) did not hold on the macOS CI runner — the re-run re-opened Terminal and re-wrote the default (run 28700816193; no warning, so the gate still passed). Unverified whether a real Mac behaves the same; investigate before trusting that step's idempotency.
 
