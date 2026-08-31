@@ -73,41 +73,70 @@ if [[ -f "$ZINIT_HOME/zinit.zsh" ]]; then
     zsh -ic 'zinit self-update; zinit update --all' || warn "zinit update failed"
 fi
 
-# pnpm — refresh the Node LTS runtime and update global packages.
-# Agent updates are handled in their own sections below.
+# pnpm — refresh the Node LTS runtime, update pnpm itself, then update the
+# user's own global packages. Agent updates are handled in their own sections.
 #
-# No `pnpm self-update` on purpose. For the standalone @pnpm/exe (SEA) build it
-# installs the new pnpm from a freshly-mktemp'd dir and records it as a LINKED
-# global dep ("@pnpm/exe": "file:/tmp/tmp.XXXX"). After a reboot/tmp-reap that
-# dir is gone, so the next `pnpm update -g` aborts with
-# ERR_PNPM_LINKED_PKG_DIR_NOT_FOUND. A SEA build's real update path is the
-# get.pnpm.io installer the bootstrap uses; `pnpm update -g` keeps @pnpm/exe
-# current within its major, and the heal below repairs the rest.
+# Three separate commands, because pnpm 11 refuses to let the generic ones near
+# itself. Both refusals were hit on a real Ubuntu box (2026-08-31):
+#
+#   - `pnpm add -g @pnpm/exe@latest` — what this section used to run to heal a
+#     broken pnpm — is now rejected outright:
+#         ERR_PNPM_GLOBAL_PNPM_INSTALL
+#         Use the "pnpm self-update" command to install or update pnpm
+#     That message was the user-visible symptom. self-update is the sanctioned
+#     path and replaces it.
+#
+#   - bare `pnpm update -g` must NEVER run. get.pnpm.io/install.sh records the
+#     standalone build as a *linked* dep of its own global project —
+#     "@pnpm/exe": "file:/tmp/tmp.XXXXXX" — pointing at the mktemp dir it
+#     unpacked into, which is gone the moment the installer exits. `update -g`
+#     walks every global project, so on EVERY box installed that way (a
+#     minutes-old one included, not just after a /tmp reap) it dies with
+#     ERR_PNPM_LINKED_PKG_DIR_NOT_FOUND. Repairing that spec to a registry
+#     version makes things worse, not better: the update then re-links
+#     @pnpm/exe as an ordinary dep WITHOUT running its setup.js preinstall —
+#     the only thing that hardlinks the real binary — so `pnpm` is left as
+#     npm's 34-byte placeholder ("pnpm: 1: This: not found") and cannot even
+#     self-update out of it. The dangling file: link is what keeps `update -g`
+#     off pnpm; leave it exactly as the installer wrote it.
+#
+# So global packages are updated BY NAME, which keeps the walk away from the
+# @pnpm/exe project entirely.
 if command -v pnpm &>/dev/null; then
     log "Updating pnpm runtime and global packages..."
     pnpm runtime set node lts -g || warn "pnpm runtime set node lts failed"
-    pnpm_update_ok=1
-    # `--yes` auto-approves pnpm 11's build-script prompt (@pnpm/exe ships
-    # setup.js to hardlink its native binary; `pnpm update` rejects the
-    # per-package `--allow-build`, so `--yes` is the non-interactive path here).
-    pnpm update -g --yes || { pnpm_update_ok=0; warn "pnpm update -g failed"; }
-    # `pnpm update -g` can leave pnpm broken two ways, both because @pnpm/exe's
-    # native `pnpm` is only ever placed by setup.js (its preinstall):
-    #   1. it re-links @pnpm/exe as an ordinary registry dep and reverts `pnpm`
-    #      to npm's 34-byte placeholder — setup.js does NOT run on a re-link — so
-    #      the shim execs a text file ("pnpm: 1: This: not found") and
-    #      `pnpm --version` fails;
-    #   2. a stale `file:` link from an older `pnpm self-update` (pre-this-fix)
-    #      dangles, so the update above errored while the binary still runs.
-    # `pnpm add -g @pnpm/exe@latest` heals both: it re-pins the manifest to a
-    # registry version (clearing the dead link) and, unlike a re-link, DOES run
-    # setup.js to re-download and hardlink the native binary. Fall back to the
-    # get.pnpm.io installer if pnpm is too broken to even run `pnpm add`.
-    if [[ "$pnpm_update_ok" == 0 ]] || ! pnpm --version >/dev/null 2>&1; then
-        warn "pnpm broken after update (placeholder binary or stale file: link) — repinning @pnpm/exe"
-        if ! pnpm add -g --allow-build=@pnpm/exe @pnpm/exe@latest; then
-            curl -fsSL https://get.pnpm.io/install.sh | sh - || warn "pnpm reinstall failed"
-        fi
+
+    # pnpm itself. A no-op that exits 0 when already on latest.
+    pnpm self-update || warn "pnpm self-update failed"
+
+    # Everything the user installed with `pnpm add -g`, minus the two entries
+    # pnpm manages through the dedicated commands above (@pnpm/exe, node).
+    # A fresh myshell box has none, so this normally skips.
+    pnpm_globals=""
+    if command -v jq &>/dev/null; then
+        pnpm_globals=$(pnpm ls -g --depth 0 --json 2>/dev/null \
+            | jq -r '[.[].dependencies // {} | keys[]] | unique[]?
+                     | select(. != "@pnpm/exe" and . != "node")' 2>/dev/null) \
+            || pnpm_globals=""
+    else
+        warn "jq missing — cannot enumerate pnpm globals; skipping their update"
+    fi
+    if [[ -n "$pnpm_globals" ]]; then
+        # --yes auto-approves pnpm 11's build-script prompt non-interactively.
+        # Unquoted on purpose: one argument per package.
+        # shellcheck disable=SC2086
+        pnpm update -g --yes $pnpm_globals || warn "pnpm update -g failed"
+    else
+        sublog "no user-installed global packages — nothing to update"
+    fi
+
+    # Last-resort repair. Only the official installer can rebuild a pnpm that
+    # is already the placeholder: in that state the binary cannot run, so
+    # self-update is not available to fix itself.
+    if ! pnpm --version >/dev/null 2>&1; then
+        warn "pnpm is not runnable (placeholder binary) — reinstalling via get.pnpm.io"
+        curl -fsSL https://get.pnpm.io/install.sh | SHELL="${SHELL:-$(command -v bash)}" sh - \
+            || warn "pnpm reinstall failed"
     fi
 fi
 
