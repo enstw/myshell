@@ -1251,28 +1251,16 @@ EOF
 [[ -s "$HOME/.bun/_bun" ]] && source "$HOME/.bun/_bun"
 EOF
 
-    if [[ "$OS" == ubuntu ]]; then
-        sublog "~/.zsh/motd.zsh"
-        cat >"$HOME/.zsh/motd.zsh" <<'EOF'
-# Ubuntu prints the MOTD from PAM (pam_motd, in /etc/pam.d/sshd and
-# /etc/pam.d/login), so a LOGIN shell has already shown it by the time
-# ~/.zshrc runs — printing it again here is the doubled banner reported on
-# 2026-08-31. It only became visible once the chsh fix actually made zsh the
-# login shell; while bash was still the login shell this file never ran at
-# login at all. The sessions PAM does NOT cover are exactly the ones this
-# file exists for — a desktop terminal tab, `docker exec`, `su` (Ubuntu's
-# /etc/pam.d/su has no pam_motd), a bare `zsh` — and none of them are login
-# shells, so that is the test.
-if [[ ! -o login ]] && [[ -x "/usr/bin/run-parts" ]] && [[ -d "/etc/update-motd.d" ]]; then
-    if [[ ! -f "$HOME/.hushlogin" ]]; then
-        /usr/bin/run-parts --lsbsysinit /etc/update-motd.d/ 2>/dev/null
-    fi
-fi
-EOF
-    else
-        # Make sure no stale motd.zsh from a prior Ubuntu install lingers on macOS.
-        rm -f "$HOME/.zsh/motd.zsh"
-    fi
+    # No ~/.zsh/motd.zsh, on either OS: on Ubuntu the MOTD belongs to PAM
+    # (pam_motd, in /etc/pam.d/sshd and /etc/pam.d/login), which prints it
+    # exactly once per login session. Printing it again from ~/.zshrc doubled
+    # it on every SSH login; guarding that to non-login shells fixed the
+    # doubling but still meant a full banner in every new terminal tab and
+    # tmux pane, so the whole file is gone (2026-09-01). The rm is
+    # unconditional so boxes that have the file from an older install lose it
+    # on the next run — the installer owns its own files under ~/.zsh (see the
+    # header's zsh layout rule), and removing one is part of owning it.
+    rm -f "$HOME/.zsh/motd.zsh"
 
     sublog "~/.zshrc"
     cat >"$HOME/.zshrc" <<'EOF'

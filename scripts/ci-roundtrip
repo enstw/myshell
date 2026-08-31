@@ -68,17 +68,23 @@ login_shell() {
 [[ "$(login_shell)" == */zsh ]] || fail "login shell not zsh after fresh run: $(login_shell)"
 [[ -x "$HOME/.local/bin/codegraph" ]] || fail "codegraph missing"
 
-# Regression (2026-08-31): the MOTD must not double. Ubuntu's pam_motd already
-# prints it for every login session (/etc/pam.d/sshd, /etc/pam.d/login), so the
-# interactive drop-in has to skip login shells — the bug only became visible
-# once the chsh fix above actually made zsh the login shell.
-if [[ -f "$HOME/.zsh/motd.zsh" ]]; then
-    grep -q '! -o login' "$HOME/.zsh/motd.zsh" \
-        || fail "motd.zsh is missing the login-shell guard (doubled MOTD)"
-fi
+# Regression (2026-08-31/09-01): the MOTD is PAM's job alone. pam_motd
+# (/etc/pam.d/sshd, /etc/pam.d/login) already prints it once per login
+# session, so zsh printing it too doubled it on every SSH login — visible only
+# once the chsh fix above actually made zsh the login shell. The drop-in is
+# gone entirely rather than guarded, so assert it stays gone.
+[[ ! -e "$HOME/.zsh/motd.zsh" ]] \
+    || fail "~/.zsh/motd.zsh exists — the MOTD belongs to pam_motd, not to zsh"
 [[ ! -f /etc/dpkg/dpkg.cfg.d/excludes ]] || fail "system still minimized (unminimize did not run)"
 
+# ...and a box that already has the file from an older install must lose it
+# on the next run, not keep printing a second banner forever.
+printf 'echo stale\n' >"$HOME/.zsh/motd.zsh"
+
 run_bootstrap rerun
+
+[[ ! -e "$HOME/.zsh/motd.zsh" ]] \
+    || fail "a pre-existing ~/.zsh/motd.zsh survived a re-run"
 
 # Regression (2026-07-04): a converged box must not pre-warm sudo — the rerun
 # has nothing system-level left to do, so sudo_work_pending must predict "no
