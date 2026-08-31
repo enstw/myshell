@@ -7,8 +7,12 @@
 # re-run — and asserts the results. Any prompt that slips through dies on
 # the missing /dev/tty, which is itself the test.
 #
-# MYSHELL_CI_AGENTS (default empty = none) can be set to e.g. "claude" to
-# also exercise the agent installers.
+# MYSHELL_CI_AGENTS (default empty = none) selects agents to install, and is
+# the only thing that exercises the agent installers at all — the sudo-user
+# job sets it to "claude". Left empty everywhere else on purpose: the other
+# jobs then assert the opposite, that an unselected agent is NOT installed,
+# which is what makes "none really means none" a tested promise rather than a
+# comment.
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -68,6 +72,20 @@ login_shell() {
 [[ "$(login_shell)" == */zsh ]] || fail "login shell not zsh after fresh run: $(login_shell)"
 [[ -x "$HOME/.local/bin/codegraph" ]] || fail "codegraph missing"
 
+# Agent installers. install_agents is keyed on the RECORDED answer, not on
+# which binaries happen to be present, so both directions are worth asserting.
+if [[ ",${MYSHELL_CI_AGENTS:-}," == *,claude,* ]]; then
+    [[ -x "$HOME/.local/bin/claude" ]] \
+        || fail "claude was selected but is not in ~/.local/bin"
+    grep -q 'selected: .*claude' /tmp/ci-fresh-out.log \
+        || fail "install_agents did not report claude as selected"
+else
+    # "none really means none": an empty answer must install nothing, and must
+    # not be re-read as "ask again" or "install the default".
+    [[ ! -e "$HOME/.local/bin/claude" ]] \
+        || fail "claude installed without being selected"
+fi
+
 # Regression (2026-08-31/09-01): the MOTD is PAM's job alone. pam_motd
 # (/etc/pam.d/sshd, /etc/pam.d/login) already prints it once per login
 # session, so zsh printing it too doubled it on every SSH login — visible only
@@ -82,6 +100,14 @@ login_shell() {
 printf 'echo stale\n' >"$HOME/.zsh/motd.zsh"
 
 run_bootstrap rerun
+
+# The agent installers must be check-first like every other step: a converged
+# box re-downloads nothing. Claude Code self-updates, so a reinstall here
+# would also be fighting its own updater.
+if [[ ",${MYSHELL_CI_AGENTS:-}," == *,claude,* ]]; then
+    grep -q 'already installed (~/.local/bin/claude) — skipping' /tmp/ci-rerun-out.log \
+        || fail "claude was reinstalled on a converged box"
+fi
 
 [[ ! -e "$HOME/.zsh/motd.zsh" ]] \
     || fail "a pre-existing ~/.zsh/motd.zsh survived a re-run"

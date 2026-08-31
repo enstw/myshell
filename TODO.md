@@ -18,7 +18,6 @@ Completed work and resolved incidents are archived in [.archive/TODO-done.md](.a
 1. Ubuntu `command-not-found` data install (`sudo apt install command-not-found && sudo apt update`).
 1. A `--yes`-style flag that accepts every default — optional sugar; answer-store seeding is already the documented headless interface (README "Headless / unattended"). Stage 2's flag surface is otherwise deliberately just `--phase` / `--list-phases` / `--help`.
 1. `myshell` dispatcher (`myshell update|sync|agents`) — deliberately deferred until a third user-facing verb exists; today `u` + re-running bootstrap cover the whole post-install surface.
-1. CI: set `MYSHELL_CI_AGENTS=claude` on one job to exercise the agent installers.
 
 ## Known assumptions / risks
 
