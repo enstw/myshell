@@ -24,6 +24,24 @@
 # stage 2 is sourced here, which is why it guards `main "$@"` on being
 # executed. Sourcing also turns on its set -Eeuo pipefail and ERR trap; both
 # are dropped again below so this driver can exercise failure paths.
+# This sources stage 2, which is bash 5, so it needs bash 4+ itself: under
+# macOS's system bash 3.2 stage 2's `declare -A` fails, its ERR trap fires,
+# and this script dies. The shebang is not enough — GitHub Actions runs a
+# `run:` step as `/bin/bash -e {0}`, which on a macOS runner IS bash 3.2, and
+# that is exactly how this shipped broken once (2026-08-31). So re-exec into a
+# real bash when the invoking one is too old, and say so plainly when there is
+# none to find.
+if [[ -z "${BASH_VERSINFO[0]:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+    for candidate in /opt/homebrew/bin/bash /usr/local/bin/bash "$(command -v bash)"; do
+        [[ -n "$candidate" && -x "$candidate" ]] || continue
+        "$candidate" -c '[[ "${BASH_VERSINFO[0]}" -ge 4 ]]' 2>/dev/null || continue
+        exec "$candidate" "$0" "$@"
+    done
+    echo "test-prompts needs bash 4+ (it sources stage 2, which is bash 5);" >&2
+    echo "this is ${BASH_VERSION:-unknown} — on macOS run it after bootstrap has installed bash 5." >&2
+    exit 1
+fi
+
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -59,13 +77,18 @@ tty_run() {
         printf 'set +e; set +o pipefail; trap - ERR\n'
         printf '%s\n' "$snippet"
     } >"$file"
+    # "$BASH", not bare `bash`: the snippet sources stage 2 too, and PATH's
+    # bash on a Mac may still be the 3.2 one this script just re-execed away
+    # from.
     if [[ "$(uname -s)" == Darwin ]]; then
         { printf '%s' "$input"; sleep "$TTY_SETTLE"; } \
-            | script -q /dev/null bash "$file" >/dev/null 2>&1
+            | script -q /dev/null "$BASH" "$file" >/dev/null 2>&1
     else
         { printf '%s' "$input"; sleep "$TTY_SETTLE"; } \
-            | script -qec "bash $file" /dev/null >/dev/null 2>&1
+            | script -qec "$BASH $file" /dev/null >/dev/null 2>&1
     fi
+    cat "$out" 2>/dev/null
+    rm -rf "$dir"
     cat "$out" 2>/dev/null
     rm -rf "$dir"
 }
@@ -74,8 +97,17 @@ tty_run() {
 # answers, no font on disk, and no git identity.
 fresh_home() { mktemp -d; }
 
+# Sourcing failures are reported, not swallowed: hiding stderr here is what
+# turned the bash 3.2 breakage above into an exit-1 with no output at all.
+src_err=$(mktemp)
 # shellcheck source=./install
-source "$REPO_ROOT/scripts/install" >/dev/null 2>&1
+if ! source "$REPO_ROOT/scripts/install" >/dev/null 2>"$src_err"; then
+    echo "could not source stage 2 ($BASH, ${BASH_VERSION}):" >&2
+    cat "$src_err" >&2
+    rm -f "$src_err"
+    exit 1
+fi
+rm -f "$src_err"
 set +e; set +o pipefail; trap - ERR
 
 echo "== normalize_agent_choice (never reached by ci-roundtrip) =="

@@ -62,9 +62,12 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      # Re-run here as well as in `static`: the pty helper branches on the OS
-      # (BSD `script` takes its command differently from util-linux's), so the
-      # macOS side of it is only exercised on this runner.
-      - run: scripts/test-prompts
       - name: bootstrap on a macos-latest runner
         run: scripts/ci-roundtrip
+      # After the round-trip, not before: a `run:` step is executed as
+      # /bin/bash, which on a macOS runner is 3.2, and test-prompts sources
+      # stage 2 (bash 5). It re-execs into a real bash itself, but one has to
+      # exist first — bootstrap is what installs it. Run here as well as in
+      # `static` because the pty helper branches on the OS, and BSD `script`
+      # takes its command differently from util-linux's.
+      - run: scripts/test-prompts
