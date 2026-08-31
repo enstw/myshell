@@ -140,6 +140,20 @@ if command -v pnpm &>/dev/null; then
     fi
 fi
 
+# uv and the CLI tools it manages (see the install header's Python rule: uv is
+# the only sanctioned Python tool, so these arrive as `uv tool install`, never
+# pip or pipx). `uv self update` is for a standalone install only — a
+# brew-managed uv refuses it, and `brew upgrade` above already covered it.
+if command -v uv &>/dev/null; then
+    log "Updating uv and its tools..."
+    if command -v brew &>/dev/null && brew list --formula uv >/dev/null 2>&1; then
+        sublog "uv is brew-managed — covered by brew upgrade above"
+    else
+        uv self update || warn "uv self update failed"
+    fi
+    uv tool upgrade --all || warn "uv tool upgrade --all failed"
+fi
+
 # Codex — official OpenAI installer. Rerun only when Codex is already present;
 # the installer handles install/upgrade in place and repairs a stale shim.
 if command -v codex &>/dev/null; then

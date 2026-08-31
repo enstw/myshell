@@ -71,6 +71,11 @@ login_shell() {
 }
 [[ "$(login_shell)" == */zsh ]] || fail "login shell not zsh after fresh run: $(login_shell)"
 [[ -x "$HOME/.local/bin/codegraph" ]] || fail "codegraph missing"
+[[ -x "$HOME/.local/bin/yt-dlp" ]] || fail "yt-dlp missing (uv tool install)"
+if [[ "$(uname -s)" == Linux ]]; then
+    [[ -f /var/lib/command-not-found/commands.db ]] \
+        || fail "command-not-found suggestion database was not built"
+fi
 
 # Agent installers. install_agents is keyed on the RECORDED answer, not on
 # which binaries happen to be present, so both directions are worth asserting.
