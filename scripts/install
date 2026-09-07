@@ -731,6 +731,16 @@ UBUNTU_EXTRA_PKGS=(
 # apt packages purge_conflicts removes on sight (see the header's uv/pnpm rules).
 UBUNTU_PURGE_PY_PKGS=(pipx python3-poetry pyenv)
 UBUNTU_PURGE_NODE_PKGS=(nodejs npm yarn yarnpkg fnm)
+# Homebrew formulae purge_conflicts removes on sight. Names Homebrew treats as
+# aliases (`npm` -> `node`) are deliberately absent: brew_purge_targets filters
+# against installed formula names, which are never alias names, so listing an
+# alias here can only produce a second attempt at a formula already in the list.
+# Order is load-bearing: brew_purge_one keeps anything an installed formula
+# still depends on, so a target that could depend on another has to be purged
+# first or it would pin its own dependency. Today's yarn/fnm/volta declare no
+# node dependency (checked 2026-09-07) — listing them ahead of the node family
+# costs nothing and keeps a future `depends_on "node"` from stranding node.
+BREW_PURGE_NODE_FORMULAE=(yarn fnm volta node node@lts node@20 node@22 node@24)
 
 # apt_missing_pkgs PKG... — echo the given packages dpkg lacks,
 # space-separated (empty when none). Shared by apt_install_missing and
@@ -1038,10 +1048,49 @@ install_zinit() {
 # leaving them around lets PATH order silently pick the wrong binary. Both
 # functions are fail-soft and check-first: a clean machine prints "nothing to
 # purge" and moves on; a brew/apt dependency conflict warns instead of aborting.
-# The two functions share a skeleton on purpose WITHOUT sharing code: the
-# natural extraction (helper echoes removed items, caller captures via $(...))
-# would run warn inside a subshell and silently drop its WARNINGS increment,
-# and the purge-active branches have no CI coverage — keep them parallel.
+# The two functions share a skeleton on purpose, and share only the two brew
+# helpers below. The forbidden extraction is still forbidden: a helper that
+# echoes removed items for the caller to capture via $(...) would run warn
+# inside a subshell and silently drop its WARNINGS increment. brew_purge_one
+# sidesteps that by running in the caller's shell and reporting through its
+# exit status, so its warn/sublog land in the real shell; brew_purge_targets is
+# the one called via $(...) and never warns. The purge-active branches have no
+# CI coverage — keep the remaining OS branches parallel.
+
+# brew_purge_targets FORMULA... — echo the given formulae that are actually
+# installed, space-separated. Matching against `brew list --formula` rather
+# than asking `brew list --formula <name>` per name is what keeps aliases from
+# double-counting: `brew list --formula npm` succeeds on a box that only has
+# `node`, because npm is an alias for it, and the caller would then attempt
+# (and report on) the same formula twice.
+brew_purge_targets() {
+    local installed f out=()
+    installed=$(brew list --formula 2>/dev/null) || return 0
+    for f in "$@"; do
+        grep -qxF "$f" <<<"$installed" && out+=("$f")   # -F: names like libc++
+    done
+    echo "${out[*]-}"
+}
+
+# brew_purge_one FORMULA — uninstall it; true when it is gone. A formula another
+# installed formula depends on is left in place and reported as a plain note,
+# not a warning: Homebrew is right to refuse, nothing is broken, and the operator
+# cannot act on it without uninstalling the dependent. Runs in the caller's
+# shell so its warn increments the real WARNINGS.
+brew_purge_one() {
+    local f="$1" dependents
+    dependents=$(brew uses --installed --formula "$f" 2>/dev/null | tr '\n' ' ')
+    if [[ -n "${dependents// /}" ]]; then
+        sublog "keeping brew:$f — required by ${dependents% }"
+        return 1
+    fi
+    if brew uninstall "$f" >/dev/null 2>&1; then
+        return 0
+    fi
+    warn "brew uninstall $f failed"
+    return 1
+}
+
 purge_conflicts() {
     log "Purging non-sanctioned Python/Node tools..."
     purge_non_uv_python
@@ -1054,13 +1103,8 @@ purge_non_uv_python() {
     # per-user dirs their installers drop).
     local removed=() f p d
     if [[ "$OS" == macos ]]; then
-        for f in pipx poetry pyenv; do
-            brew list --formula "$f" >/dev/null 2>&1 || continue
-            if brew uninstall "$f" >/dev/null 2>&1; then
-                removed+=("brew:$f")
-            else
-                warn "brew uninstall $f failed (dependents?)"
-            fi
+        for f in $(brew_purge_targets pipx poetry pyenv); do
+            brew_purge_one "$f" && removed+=("brew:$f")
         done
     elif [[ "$NO_SUDO" != 1 ]]; then
         for p in "${UBUNTU_PURGE_PY_PKGS[@]}"; do
@@ -1104,13 +1148,8 @@ purge_non_pnpm_node() {
         # Sweep the versioned node@X family too — past `brew install node@20`
         # etc. are common leftovers. The standalone pnpm install_pnpm already
         # handles brew pnpm, so it isn't repeated here.
-        for f in node node@lts node@20 node@22 node@24 npm yarn fnm volta; do
-            brew list --formula "$f" >/dev/null 2>&1 || continue
-            if brew uninstall "$f" >/dev/null 2>&1; then
-                removed+=("brew:$f")
-            else
-                warn "brew uninstall $f failed (dependents?)"
-            fi
+        for f in $(brew_purge_targets "${BREW_PURGE_NODE_FORMULAE[@]}"); do
+            brew_purge_one "$f" && removed+=("brew:$f")
         done
     elif [[ "$NO_SUDO" != 1 ]]; then
         for p in "${UBUNTU_PURGE_NODE_PKGS[@]}"; do
@@ -1156,8 +1195,25 @@ purge_non_pnpm_node() {
     local g root pkg selected_agents
     local stale_pkgs=(@anthropic-ai/claude-code @google/gemini-cli)
     selected_agents=$(cat "$STATE_DIR/agents" 2>/dev/null || true)
-    local brew_node_gone=0
-    [[ "$OS" == macos ]] && ! brew list --formula node >/dev/null 2>&1 && brew_node_gone=1
+    # Re-derived after the uninstall loop above, and over the whole family: a
+    # kept node@22 owns /opt/homebrew/lib/node_modules just as plain node does.
+    # `brew list --formula node` is the wrong question here — it also succeeds
+    # via the npm alias — so ask the installed-formula list instead.
+    # Two flags, not one, because the interesting states are not complements:
+    # only macOS can answer "a brew node owns these files", and on Ubuntu the
+    # answer is neither gone nor present. brew_node_gone gates deletion and
+    # stays 0 off macOS (never delete from a brew root we cannot reason about);
+    # brew_node_present gates the leftovers report and stays 0 off macOS too
+    # (an Ubuntu /usr/local npm has no brew formula behind it, so it is a real
+    # leftover and must still be reported).
+    local brew_node_gone=0 brew_node_present=0
+    if [[ "$OS" == macos ]]; then
+        if [[ -z "$(brew_purge_targets "${BREW_PURGE_NODE_FORMULAE[@]}")" ]]; then
+            brew_node_gone=1
+        else
+            brew_node_present=1
+        fi
+    fi
     for root in /usr/local /opt/homebrew "$HOME/.npm-global"; do
         [[ -d "$root/lib/node_modules" ]] || continue
         for pkg in "${stale_pkgs[@]}"; do
@@ -1196,12 +1252,24 @@ purge_non_pnpm_node() {
     fi
     # Brew/usr roots are shared with Homebrew: warn on genuine leftovers, never
     # delete (a stray link there could be load-bearing).
+    # npm/npx/corepack in a brew root when a brew node is still installed are
+    # that formula's own files, not user globals — reporting them as leftovers
+    # sent every macOS box with a node dependent (emscripten, say) into a
+    # warning it could do nothing about. Name what actually lingers, too: the
+    # old message asked for a review without saying what to review.
+    local -a lingering
     for g in /usr/local/lib/node_modules /opt/homebrew/lib/node_modules; do
         [[ -d "$g" ]] || continue
-        if find "$g" -mindepth 1 -maxdepth 1 -not -name '.*' 2>/dev/null \
-             | grep -q .; then
-            warn "npm globals linger in $g — review and remove if unused"
-        fi
+        lingering=()
+        while IFS= read -r d; do
+            [[ -n "$d" ]] || continue
+            if [[ "$brew_node_present" == 1 ]]; then
+                case "${d##*/}" in npm|npx|corepack) continue ;; esac
+            fi
+            lingering+=("${d##*/}")
+        done < <(find "$g" -mindepth 1 -maxdepth 1 -not -name '.*' 2>/dev/null)
+        [[ ${#lingering[@]} -gt 0 ]] || continue
+        warn "npm globals linger in $g (${lingering[*]}) — review and remove if unused"
     done
     if [[ ${#removed[@]} -eq 0 ]]; then
         sublog "Node: nothing to purge (pnpm-only)"
