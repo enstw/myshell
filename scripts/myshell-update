@@ -109,14 +109,18 @@ if command -v pnpm &>/dev/null; then
     # pnpm itself. A no-op that exits 0 when already on latest.
     pnpm self-update || warn "pnpm self-update failed"
 
-    # Everything the user installed with `pnpm add -g`, minus the two entries
-    # pnpm manages through the dedicated commands above (@pnpm/exe, node).
-    # A fresh myshell box has none, so this normally skips.
+    # Everything the user installed with `pnpm add -g`, minus the entries pnpm
+    # manages through the dedicated commands above: @pnpm/exe and node from the
+    # installer, plus `pnpm` itself — since pnpm 12, `pnpm self-update` records
+    # the new version as a global package named `pnpm` (seen 2026-09-07 with
+    # 12.3.4), and feeding that name back to `update -g` fails with the same
+    # ERR_PNPM_GLOBAL_PNPM_INSTALL as above. A fresh myshell box has no other
+    # globals, so this normally skips.
     pnpm_globals=""
     if command -v jq &>/dev/null; then
         pnpm_globals=$(pnpm ls -g --depth 0 --json 2>/dev/null \
             | jq -r '[.[].dependencies // {} | keys[]] | unique[]?
-                     | select(. != "@pnpm/exe" and . != "node")' 2>/dev/null) \
+                     | select(. != "@pnpm/exe" and . != "node" and . != "pnpm")' 2>/dev/null) \
             || pnpm_globals=""
     else
         warn "jq missing — cannot enumerate pnpm globals; skipping their update"
