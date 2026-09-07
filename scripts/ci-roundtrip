@@ -120,6 +120,19 @@ fi
    || -e /var/lib/update-notifier/hide-esm-in-motd ]] \
     || fail "update-notifier present but hide-esm-in-motd not created"
 
+# The installed revision has to be recorded, because myshell-update's
+# self-update section reads it to decide whether myshell itself is stale — and
+# an absent record reads as "unknown", which makes every `u` a full re-install.
+# This runs from a checkout, so the recorded SHA must be that checkout's HEAD
+# and the recorded path must be the checkout itself.
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/myshell"
+[[ -f "$state_dir/installed-commit" ]] \
+    || fail "installed-commit was not recorded — myshell-update cannot tell if myshell is stale"
+[[ "$(cat "$state_dir/installed-commit")" == "$(git -C "$REPO_ROOT" rev-parse HEAD)" ]] \
+    || fail "installed-commit does not match the checkout HEAD it was installed from"
+[[ "$(cat "$state_dir/checkout")" == "$REPO_ROOT" ]] \
+    || fail "checkout was not recorded as $REPO_ROOT"
+
 # ...and a box that already has the file from an older install must lose it
 # on the next run, not keep printing a second banner forever.
 printf 'echo stale\n' >"$HOME/.zsh/motd.zsh"

@@ -54,4 +54,24 @@ for f in scripts/install scripts/myshell-update; do
     exit 1
 done
 echo "output-helper blocks: byte-identical"
+
+# The myshell repo URL is spelled in three places for the same reason the
+# output helpers are duplicated: bootstrap runs before any checkout exists and
+# myshell-update is deployed standalone to ~/bin, so no sourced constant can
+# reach all three. Drift means the self-update section would check one repo and
+# install another, so pin them to each other here.
+url_of() { sed -n "s/^$2=\"\(.*\)\"\$/\1/p" "$1" | head -1; }
+tarball_bootstrap=$(url_of bootstrap REPO_TARBALL)
+tarball_update=$(url_of scripts/myshell-update MYSHELL_TARBALL)
+clone_install=$(url_of scripts/install MYSHELL_REPO_URL)
+clone_update=$(url_of scripts/myshell-update MYSHELL_REPO_URL)
+[[ -n "$tarball_bootstrap" && "$tarball_bootstrap" == "$tarball_update" ]] \
+    || { echo "error: tarball URL differs — bootstrap:'$tarball_bootstrap' myshell-update:'$tarball_update'" >&2; exit 1; }
+[[ -n "$clone_install" && "$clone_install" == "$clone_update" ]] \
+    || { echo "error: clone URL differs — install:'$clone_install' myshell-update:'$clone_update'" >&2; exit 1; }
+# ...and the two URL shapes must name the same repo.
+[[ "${tarball_bootstrap%/archive/*}" == "${clone_install%.git}" ]] \
+    || { echo "error: tarball and clone URLs name different repos: '$tarball_bootstrap' vs '$clone_install'" >&2; exit 1; }
+echo "myshell repo URLs: consistent"
+
 echo "ok"

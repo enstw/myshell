@@ -160,6 +160,10 @@ set -Eeuo pipefail
 # =============================================================================
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Where myshell itself lives. Only record_installed_source and (in the deployed
+# ~/bin/myshell-update) the self-update section need it; bootstrap keeps its own
+# REPO_TARBALL because it runs before this file exists on a curl|sh box.
+MYSHELL_REPO_URL="https://github.com/enstw/myshell.git"
 
 case "$(uname -s)" in
     Darwin) OS=macos ;;
@@ -178,9 +182,12 @@ mkdir -p "$PNPM_HOME"
 export PATH="$PNPM_HOME/bin:$PNPM_HOME:$HOME/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 # Recorded interactive answers live here (see the header rule): one file per
-# question, written by the choose_* helpers, honored on every re-run. One
-# non-answer file also lives here: apt-sudoers.applied, a user-readable mirror
-# of the root-only sudoers drop-in so currency checks stay sudo-free.
+# question, written by the choose_* helpers, honored on every re-run. Three
+# non-answer files also live here: apt-sudoers.applied, a user-readable mirror
+# of the root-only sudoers drop-in so currency checks stay sudo-free, plus
+# installed-commit and checkout, which record WHICH myshell revision this box
+# last had applied and where it was applied from (see record_installed_source).
+# myshell-update reads those two to decide whether myshell itself is stale.
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/myshell"
 
 # Output vocabulary (see the header rule) — deliberately duplicated
@@ -2504,6 +2511,46 @@ phase_agents() {
     install_codegraph
 }
 
+# record_installed_source — note which myshell revision just got applied, and
+# where it came from. myshell-update's self-update section compares the
+# recorded commit against origin's HEAD; without this file it cannot tell a
+# current box from a year-old one.
+#
+# Two source shapes, because bootstrap has two entry paths (see its header):
+#   - a checkout (./bootstrap) has .git, so HEAD is the exact revision and
+#     $REPO_ROOT is worth remembering — myshell-update reads it (never writes
+#     it) to recognise a developer box whose local build is AHEAD of origin.
+#   - the curl|sh path extracts a tarball with no .git and no revision in it,
+#     so the only way to name what we just installed is to ask the remote.
+#     Recording origin's HEAD is a hair racy (a push landing mid-run makes the
+#     record one commit optimistic); the cost is one redundant self-update.
+# The checkout file is REMOVED, not left stale, when this run had no .git:
+# re-installing a dev box from the tarball must not leave myshell-update
+# pointing at a checkout that no longer describes what is installed.
+#
+# Fail-soft throughout: no git or no network simply means no record, and
+# myshell-update treats an absent record as "unknown, refresh to find out".
+record_installed_source() {
+    local sha=""
+    mkdir -p "$STATE_DIR"
+    # Every capture is `|| sha=""`, never a bare assignment: under set -e +
+    # pipefail a failing `git ... | awk` fails the substitution, and an
+    # unguarded assignment would abort the whole run on a box with no network.
+    if [[ -d "$REPO_ROOT/.git" ]] && command -v git >/dev/null; then
+        sha=$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null) || sha=""
+        [[ -n "$sha" ]] && printf '%s\n' "$REPO_ROOT" >"$STATE_DIR/checkout"
+    elif command -v git >/dev/null; then
+        sha=$(git ls-remote "$MYSHELL_REPO_URL" HEAD 2>/dev/null | awk 'NR==1{print $1}') || sha=""
+        rm -f "$STATE_DIR/checkout"
+    fi
+    if [[ -z "$sha" ]]; then
+        sublog "could not determine the myshell revision — not recorded"
+        return 0
+    fi
+    printf '%s\n' "$sha" >"$STATE_DIR/installed-commit"
+    sublog "recorded myshell revision ${sha:0:7}"
+}
+
 main() {
     parse_args "$@"
     local banner="myshell stage 2 — $OS"
@@ -2520,6 +2567,12 @@ main() {
         phase_selected "$name" || continue
         run_phase "$idx" "$name"
     done
+    # Only a full run may claim a revision is installed: `--phase fonts` applied
+    # one phase of it, and recording that as the installed revision would tell
+    # myshell-update to stop offering the rest.
+    if [[ ${#SELECTED_PHASES[@]} -eq ${#PHASES[@]} ]]; then
+        record_installed_source
+    fi
     local ran=${#SELECTED_PHASES[@]}
     if [[ "$WARNINGS" -gt 0 ]]; then
         log "Done — $ran phase(s), $WARNINGS warning(s); grep output for 'warning:'. Start a new shell to pick up changes."

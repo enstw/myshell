@@ -33,6 +33,107 @@ else
     NO_SUDO=1
 fi
 
+# myshell itself — FIRST, so the rest of this sweep runs under the newest
+# maintenance code rather than applying it a run late.
+#
+# The check is cheap (one `git ls-remote`) and the update is rare, so the
+# common case costs a single network round-trip and prints one line.
+#
+# What gets run is the tarball's `bootstrap`, not scripts/install directly:
+# stage 1 owns finding (or installing) a bash 5 to run stage 2 with, and
+# /bin/bash on macOS is 3.2. Reusing it keeps that logic in one place.
+#
+# A recorded checkout is read, never written. `u` must not `git pull` in a
+# working tree the user develops in — that would move their branch, fight
+# their WIP, and surprise them in a way a package sweep never should. The
+# checkout is consulted for exactly one question: is this box's build AHEAD of
+# origin (a maintainer who has applied local commits)? If so, refreshing from
+# origin would be a downgrade, so we leave it alone.
+#
+# MYSHELL_SELF_UPDATED guards the exec below against a loop: if the installer
+# somehow fails to record the new revision, the re-exec'd copy would otherwise
+# find itself stale again and re-update forever.
+MYSHELL_REPO_URL="https://github.com/enstw/myshell.git"
+MYSHELL_TARBALL="https://github.com/enstw/myshell/archive/refs/heads/main.tar.gz"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/myshell"
+
+self_update_myshell() {
+    local remote installed checkout tmp
+    if ! command -v git >/dev/null 2>&1; then
+        sublog "git not installed — skipping the myshell version check"
+        return 0
+    fi
+    # `|| remote=""`, not a bare assignment: set -e + pipefail turn a failing
+    # `git ... | awk` into an aborted sweep, and being offline is normal.
+    remote=$(git ls-remote "$MYSHELL_REPO_URL" HEAD 2>/dev/null | awk 'NR==1{print $1}') || remote=""
+    if [[ -z "$remote" ]]; then
+        warn "could not reach $MYSHELL_REPO_URL — skipping the myshell version check"
+        return 0
+    fi
+    installed=$(cat "$STATE_DIR/installed-commit" 2>/dev/null || true)
+    if [[ "$installed" == "$remote" ]]; then
+        sublog "myshell up to date (${remote:0:7})"
+        return 0
+    fi
+    # Ahead, not behind: the recorded revision is a descendant of origin's
+    # HEAD, so this box already has everything origin does, plus local work.
+    # merge-base also exits non-zero when the object is simply unknown to the
+    # checkout, which is the right answer here — unknown means not ahead.
+    checkout=$(cat "$STATE_DIR/checkout" 2>/dev/null || true)
+    if [[ -n "$installed" && -n "$checkout" && -d "$checkout/.git" ]] \
+       && git -C "$checkout" merge-base --is-ancestor "$remote" "$installed" 2>/dev/null; then
+        sublog "local build ${installed:0:7} is ahead of origin — leaving it alone"
+        return 0
+    fi
+    if [[ -z "$installed" ]]; then
+        sublog "installed myshell revision unknown — refreshing to ${remote:0:7}"
+    else
+        sublog "myshell ${installed:0:7} -> ${remote:0:7} — re-running the installer"
+    fi
+    tmp=$(mktemp -d) || { warn "mktemp failed — skipping the myshell self-update"; return 0; }
+    if ! curl -fsSL "$MYSHELL_TARBALL" | tar xz -C "$tmp"; then
+        rm -rf "$tmp"
+        warn "myshell download failed — skipping the self-update"
+        return 0
+    fi
+    if [[ ! -f "$tmp/myshell-main/bootstrap" ]]; then
+        rm -rf "$tmp"
+        warn "myshell tarball has no bootstrap — skipping the self-update"
+        return 0
+    fi
+    if ! sh "$tmp/myshell-main/bootstrap"; then
+        rm -rf "$tmp"
+        warn "myshell self-update failed — the box keeps its previous install"
+        return 0
+    fi
+    rm -rf "$tmp"
+    # Backstop the installer's own record. It writes installed-commit when it
+    # can work out its revision, but a box with no git, no network at install
+    # time, or a checkout git refuses to read (dubious ownership) leaves the
+    # file absent — and an absent record reads as "unknown", which would make
+    # every single `u` from then on do a full re-install. We just fetched and
+    # applied $remote, so we can say authoritatively what is installed.
+    mkdir -p "$STATE_DIR"
+    printf '%s\n' "$remote" >"$STATE_DIR/installed-commit"
+    # The installer just replaced ~/bin/myshell-update. It unlinks before
+    # copying, so THIS running process still holds the old inode and finishes
+    # safely — but every section below would be the old code. Hand over to the
+    # new copy instead, which re-checks (now up to date) and sweeps once.
+    if [[ -x "$HOME/bin/myshell-update" ]]; then
+        log "myshell updated — restarting the sweep with the new copy"
+        MYSHELL_SELF_UPDATED=1 exec "$HOME/bin/myshell-update"
+    fi
+}
+
+log "Checking myshell..."
+if [[ "${MYSHELL_NO_SELF_UPDATE:-0}" == 1 ]]; then
+    sublog "MYSHELL_NO_SELF_UPDATE=1 — skipping"
+elif [[ "${MYSHELL_SELF_UPDATED:-0}" == 1 ]]; then
+    sublog "just self-updated — continuing with the sweep"
+else
+    self_update_myshell || warn "myshell version check failed"
+fi
+
 if command -v brew &>/dev/null; then
     log "Updating Homebrew packages..."
     # Homebrew 6.0 made "ask mode" (a "Do you want to proceed?" confirmation
