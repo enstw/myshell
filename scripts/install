@@ -360,6 +360,7 @@ sudo_work_pending() {
             apt_sudoers_pending && return 0                             # configure_apt_sudoers
             locale_configured || return 0                               # configure_locale
             [[ "$(ubuntu_timezone)" == Asia/Taipei ]] || return 0        # configure_timezone
+            esm_notices_configured || return 0                          # configure_esm_notices
         fi
         if phase_selected shell; then
             [[ -n "$(apt_missing_pkgs "${UBUNTU_SHELL_PKGS[@]}")" ]] && return 0   # install_shell_core
@@ -1565,6 +1566,68 @@ configure_timezone() {
     sublog "set to $target"
 }
 
+# Ubuntu Pro / ESM upsell. An unattached box gets told about "Expanded
+# Security Maintenance" at every login (the MOTD) and every apt run. Three
+# knobs, every one of them upstream's own and reversible — no MOTD scripts are
+# deleted, the pro client stays installed (ubuntu-minimal depends on it):
+#   1. /var/lib/update-notifier/hide-esm-in-motd — update-notifier's documented
+#      switch (canonical-ubuntu-pro-client.readthedocs-hosted.com, "Ubuntu
+#      Pro-related MOTD messages"): when the file exists, its MOTD helper
+#      passes --no-esm-messages to apt-check, so the "N additional security
+#      updates can be applied with ESM Apps" block disappears while the plain
+#      update count stays. The helper is re-run with --force right after, or
+#      the cached stamp keeps printing the old text until the next apt run.
+#   2. pro config apt_news=false — the news banner apt prints.
+#   3. dpkg-divert of /etc/apt/apt.conf.d/20apt-esm-hook.conf — the same ESM
+#      count printed by `apt upgrade`. A divert, not an rm/mv, so a pro-client
+#      upgrade lands its new copy at the diverted name instead of resurrecting
+#      the hook (`dpkg-divert --rename --remove <conffile>` undoes it).
+# Each knob is skipped when its tool is absent (a container has none of them).
+ESM_MOTD_FLAG=/var/lib/update-notifier/hide-esm-in-motd
+ESM_MOTD_HELPER=/usr/lib/update-notifier/update-motd-updates-available
+ESM_APT_HOOK=/etc/apt/apt.conf.d/20apt-esm-hook.conf
+
+# Sudo-free currency check (sudo_work_pending calls it before any password
+# prompt): true when nothing is left for configure_esm_notices to do. Mirrors
+# the step's three guards exactly.
+esm_notices_configured() {
+    [[ ! -x "$ESM_MOTD_HELPER" || -e "$ESM_MOTD_FLAG" ]] || return 1
+    if command -v pro >/dev/null; then
+        [[ "$(pro config show apt_news 2>/dev/null || true)" == *False* ]] || return 1
+    fi
+    [[ ! -e "$ESM_APT_HOOK" ]] || return 1
+    return 0
+}
+
+configure_esm_notices() {
+    [[ "$OS" == ubuntu ]] || return 0
+    log "Silencing Ubuntu Pro / ESM notices..."
+    if [[ "$NO_SUDO" == "1" ]]; then
+        warn "no sudo — skipping; ensure root has run: touch $ESM_MOTD_FLAG && $ESM_MOTD_HELPER --force"
+        return 0
+    fi
+    if esm_notices_configured; then
+        sublog "already silenced — skipping"
+        return 0
+    fi
+    if [[ -x "$ESM_MOTD_HELPER" && ! -e "$ESM_MOTD_FLAG" ]]; then
+        $SUDO touch "$ESM_MOTD_FLAG"
+        # Regenerate the MOTD stamp now (apt-check, a few seconds) instead of
+        # leaving the old ESM text cached until the next apt run.
+        $SUDO "$ESM_MOTD_HELPER" --force || warn "could not regenerate the MOTD update stamp"
+        sublog "MOTD: ESM lines hidden ($ESM_MOTD_FLAG)"
+    fi
+    if command -v pro >/dev/null \
+       && [[ "$(pro config show apt_news 2>/dev/null || true)" != *False* ]]; then
+        $SUDO pro config set apt_news=false || warn "pro config set apt_news=false failed"
+        sublog "apt: news banner off (pro config apt_news=false)"
+    fi
+    if [[ -e "$ESM_APT_HOOK" ]]; then
+        $SUDO dpkg-divert --rename --divert "$ESM_APT_HOOK.disabled" --add "$ESM_APT_HOOK" >/dev/null
+        sublog "apt: ESM upgrade hook diverted to $ESM_APT_HOOK.disabled"
+    fi
+}
+
 setup_pnpm() {
     command -v pnpm >/dev/null || { log "pnpm setup"; warn "pnpm not found — skipping"; return 0; }
     log "Provisioning Node LTS via pnpm..."
@@ -2321,6 +2384,7 @@ phase_system() {
     configure_apt_sudoers
     configure_locale
     configure_timezone
+    configure_esm_notices
 }
 
 # A working, good-looking zsh: the shell, its plugin manager and prompt, the

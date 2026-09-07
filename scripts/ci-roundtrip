@@ -112,6 +112,14 @@ fi
     || fail "~/.zsh/motd.zsh exists — the MOTD belongs to pam_motd, not to zsh"
 [[ ! -f /etc/dpkg/dpkg.cfg.d/excludes ]] || fail "system still minimized (unminimize did not run)"
 
+# configure_esm_notices (2026-09-07): where update-notifier is installed, the
+# MOTD's ESM upsell is switched off via upstream's own flag file. The docker
+# image usually lacks update-notifier-common, so the assertion is conditional
+# — the step must be a clean no-op there.
+[[ ! -x /usr/lib/update-notifier/update-motd-updates-available \
+   || -e /var/lib/update-notifier/hide-esm-in-motd ]] \
+    || fail "update-notifier present but hide-esm-in-motd not created"
+
 # ...and a box that already has the file from an older install must lose it
 # on the next run, not keep printing a second banner forever.
 printf 'echo stale\n' >"$HOME/.zsh/motd.zsh"
