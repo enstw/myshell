@@ -7,7 +7,7 @@ Two-stage installer so a colleague runs one command on a bare Mac or minimal Ubu
 - `bootstrap` — POSIX-sh stage 1. Installs brew + bash 5 on macOS, refreshes apt on Ubuntu, then runs stage 2 (no `exec` — the cleanup trap must outlive it).
 - `scripts/install` — bash 5 stage 2. Self-documenting; cross-cutting rules live in its header banner.
 
-CI (GitHub Actions) runs `scripts/check` and `scripts/test-prompts`, plus three headless round-trips — sudo user and root in minimized `ubuntu:26.04` containers, and a `macos-latest` runner leg — fresh run + idempotent re-run, asserting zero warnings, on every push. **All green since 2026-07-04.** **Not yet run end-to-end on a real bare Mac** (a runner is not bare). The prompt layer itself is now covered by `scripts/test-prompts`, which drives it under a real pty.
+CI (GitHub Actions) runs `scripts/check` and `scripts/test-prompts`, plus three headless round-trips — sudo user and root in minimized `ubuntu:latest` containers (the current LTS, tracked automatically), and a `macos-latest` runner leg — fresh run + idempotent re-run, asserting zero warnings, on every push. **All green since 2026-07-04.** **Not yet run end-to-end on a real bare Mac** (a runner is not bare). The prompt layer itself is now covered by `scripts/test-prompts`, which drives it under a real pty.
 
 Completed work and resolved incidents are archived in [.archive/TODO-done.md](.archive/TODO-done.md) (and `git log`); current behavior is documented by the `scripts/install` header banner and `README.md`.
 
@@ -25,15 +25,15 @@ Completed work and resolved incidents are archived in [.archive/TODO-done.md](.a
 
 ## How to resume / test
 
-1. Fresh Ubuntu 26.04 container:
+1. Fresh Ubuntu container (latest LTS):
    ```sh
-   docker run --rm -it -v "$PWD":/myshell ubuntu:26.04 bash -c \
+   docker run --rm -it -v "$PWD":/myshell ubuntu:latest bash -c \
      'apt-get update && apt-get install -y sudo curl git && useradd -m -s /bin/bash t && \
       echo "t ALL=(ALL) NOPASSWD:ALL" >>/etc/sudoers && su - t -c "cp -r /myshell ~/myshell && ~/myshell/bootstrap"'
    ```
 1. Root + no-sudo container (exercises the `$SUDO` shim):
    ```sh
-   docker run --rm -it -v "$PWD":/myshell ubuntu:26.04 bash -c \
+   docker run --rm -it -v "$PWD":/myshell ubuntu:latest bash -c \
      'apt-get update && apt-get install -y curl git && cp -r /myshell /root/myshell && /root/myshell/bootstrap'
    ```
 1. Headless variant (what CI runs): `scripts/ci-roundtrip` inside the container — seeds the recorded answers, runs bootstrap twice, asserts artifacts + zero warnings. The two commands above are the same thing with the prompts left in, if you ever want to watch a run interactively.

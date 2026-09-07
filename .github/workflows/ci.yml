@@ -16,11 +16,19 @@ jobs:
       # seed every answer so that nothing prompts.
       - run: scripts/test-prompts
 
-  # Both round-trips run in the stock ubuntu:26.04 docker image — the current
-  # LTS (Resolute Raccoon), and the release myshell's own Ubuntu machines run.
-  # It is minimized (no man pages/docs), the harshest realistic base, and it
-  # exercises the unminimize step. Bump this with each new LTS rather than
-  # accumulating releases: the target is "latest LTS", not "every LTS".
+  # Both round-trips run in the stock `ubuntu:latest` docker image. Docker
+  # publishes that tag as the latest Ubuntu LTS ("the version recommended for
+  # general use"), which is myshell's target, so CI follows each new LTS with
+  # no version pinned here to go stale. Deliberately NOT `ubuntu:rolling` —
+  # that is the newest release whether or not it is an LTS, so it would drag
+  # CI onto interim releases nobody runs.
+  #
+  # The tag floats, which costs reproducibility: a build from six months ago
+  # cannot be recreated from the tag, and a new LTS lands in CI the day Docker
+  # publishes it — months before Ubuntu offers it to existing machines. That
+  # is early warning, not a problem, but a failure has to say what it ran on,
+  # so each job prints the release first. The image is minimized (no man
+  # pages/docs), the harshest realistic base, and it exercises unminimize.
   # scripts/ci-roundtrip seeds the recorded answers so the interactive
   # bootstrap runs headless, then runs it twice (fresh + idempotent re-run)
   # and asserts the results. Only the sudo-user job selects an agent; the
@@ -30,9 +38,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: bootstrap as sudo-capable user in minimized ubuntu:26.04
+      - name: bootstrap as sudo-capable user in minimized ubuntu:latest
         run: |
-          docker run --rm -v "$PWD":/myshell:ro ubuntu:26.04 bash -ec '
+          docker run --rm -v "$PWD":/myshell:ro ubuntu:latest bash -ec '
+            grep PRETTY_NAME /etc/os-release
             apt-get update
             apt-get install -y sudo curl git
             useradd -m -s /bin/bash t
@@ -51,9 +60,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: bootstrap as root (no sudo installed) in minimized ubuntu:26.04
+      - name: bootstrap as root (no sudo installed) in minimized ubuntu:latest
         run: |
-          docker run --rm -v "$PWD":/myshell:ro ubuntu:26.04 bash -ec '
+          docker run --rm -v "$PWD":/myshell:ro ubuntu:latest bash -ec '
+            grep PRETTY_NAME /etc/os-release
             apt-get update
             apt-get install -y curl git
             cp -r /myshell /root/myshell

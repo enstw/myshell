@@ -15,7 +15,7 @@
 #   - the parser is a pure function, so it is called directly;
 #   - ask/confirm read from /dev/tty on purpose (see the header's answers
 #     rule), so redirecting stdin is not enough — those run under a real pty.
-#     `script` is the only pty allocator present on BOTH a bare ubuntu:24.04
+#     `script` is the only pty allocator present on BOTH a bare Ubuntu image
 #     and a Mac (python3 is not in the container), and its argument order
 #     differs between util-linux and BSD. Feeding it needs a trailing sleep:
 #     without one the EOF wins the race against the first read and every
@@ -252,7 +252,7 @@ echo "== gather_answers asks in order, and only for selected phases =="
 # The full menu in order: agents, optional apps, fonts, login shell. A wrong
 # order would land each answer in the wrong file, and this is the only thing
 # that would catch it. gather_git_identity is stubbed out (covered above) so
-# the test does not depend on a git being installed — on a bare ubuntu:24.04
+# the test does not depend on a git being installed — on a bare Ubuntu image
 # there is none, and it would prompt and eat these answers.
 h=$(fresh_home)
 got=$(tty_run '1,2

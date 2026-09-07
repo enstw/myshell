@@ -2090,7 +2090,7 @@ install_codegraph() {
 # the package is installed. So this needs an apt-get update of its own, after
 # install_extra_packages put the package there — riding on the base one is too
 # early, and running /usr/lib/cnf-update-db by hand builds nothing because the
-# index is not on disk yet (verified on a stock ubuntu:24.04, 2026-09-01).
+# index is not on disk yet (verified on a stock minimized Ubuntu, 2026-09-01).
 configure_command_not_found() {
     [[ "$OS" == ubuntu ]] || return 0
     log "Enabling command-not-found suggestions..."
