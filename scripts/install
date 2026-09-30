@@ -1904,7 +1904,11 @@ install_quarto() {
             return 0
         fi
         sublog "apt install quarto-linux-$arch.deb"
-        # apt-get, not dpkg -i: it resolves the .deb's dependencies too.
+        # apt-get, not dpkg -i: it resolves the .deb's dependencies too. apt
+        # reads local .debs as its sandbox user _apt, and mktemp creates 0600
+        # files — without a+r it falls back to root and prints an "N: Download
+        # is performed unsandboxed as root" notice.
+        chmod a+r "$deb"
         $SUDO apt-get install -y "$deb"
         rm -f "$deb"
     fi
