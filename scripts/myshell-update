@@ -33,6 +33,83 @@ else
     NO_SUDO=1
 fi
 
+# Local drop-ins — ~/.config/myshell/update.d/*.sh, in lexical order, last so
+# they can lean on the toolchain the sections below just refreshed (git, uv,
+# pnpm). scripts/install overwrites THIS file on every bootstrap, so a hand-edit
+# here is lost; update.d is the sanctioned place for machine-local steps. The
+# installer deploys myshell's own drop-ins there and leaves every other file
+# alone, exactly as it treats ~/.zsh.
+#
+# Sourced, not executed, so a drop-in is simply another section of this script:
+# it gets log/sublog/warn, $SUDO/$NO_SUDO, and its warnings reach the Done line
+# below. Executing them instead would isolate them, but the WARNINGS counter
+# lives in this shell and a child process cannot increment it. Three rules
+# follow from sourcing, and the shipped drop-ins document them too:
+#   1. `source` runs inside a `|| warn` list, which suspends set -e for the
+#      whole file — so guard every step with its own `|| warn`, like the
+#      sections below, instead of relying on the ERR trap;
+#   2. a drop-in shares this shell, so wrap any `cd` in a subshell — and keep
+#      `warn` OUTSIDE that subshell, or its counter increment is lost with the
+#      subshell (scripts/install's header calls out the same trap);
+#   3. end the file with `true`: the status reported here is whatever ran last,
+#      and a guard `if` that didn't match returns 1, which would otherwise be
+#      reported as a failed drop-in on every machine that skips it.
+#
+# With names (from --drop-ins), only the drop-ins whose file name contains one
+# of them run: `--drop-ins skill-jz` runs 10-skill-jz.sh.
+UPDATE_D="$HOME/.config/myshell/update.d"
+run_drop_ins() {
+    local drop_in name matched=0
+    [[ -d "$UPDATE_D" ]] || return 0
+    for drop_in in "$UPDATE_D"/*.sh; do
+        [[ -f "$drop_in" ]] || continue   # unmatched glob stays literal
+        if [[ $# -gt 0 ]]; then
+            for name in "$@"; do
+                [[ "${drop_in##*/}" == *"$name"* ]] && break
+                name=""
+            done
+            [[ -n "$name" ]] || continue
+        fi
+        matched=$((matched + 1))
+        # shellcheck disable=SC1090  # runtime path, nothing to follow
+        source "$drop_in" || warn "update.d/${drop_in##*/} failed"
+    done
+    if [[ $# -gt 0 && "$matched" -eq 0 ]]; then
+        warn "no drop-in in $UPDATE_D matches: $*"
+    fi
+}
+
+finish() {
+    if [[ "$WARNINGS" -gt 0 ]]; then
+        log "Done with $WARNINGS warning(s) — grep output for 'warning:'."
+    else
+        log "Done."
+    fi
+}
+
+# --drop-ins [NAME...]: run only the update.d drop-ins (all, or those NAME
+# picks), skipping myshell's self-update and every package section, so nothing
+# here upgrades a package or asks for sudo. For a caller that wants one refresh
+# without the whole sweep: the init-machine skill (enstw/skill-jz) runs
+# `myshell-update --drop-ins` to pull skill-jz, relink the skills and sync the
+# Simplenote notes.
+case "${1:-}" in
+    --drop-ins)
+        shift
+        run_drop_ins "$@"
+        finish
+        exit 0
+        ;;
+    -h|--help)
+        printf 'usage: myshell-update [--drop-ins [NAME...]]\n'
+        printf '  (no argument)        the whole sweep: myshell, packages, agents, drop-ins\n'
+        printf '  --drop-ins [NAME...] only ~/.config/myshell/update.d drop-ins, or those whose name contains NAME\n'
+        exit 0
+        ;;
+    "") ;;
+    *) die "unknown argument: $1 (see --help)" ;;
+esac
+
 # myshell itself — FIRST, so the rest of this sweep runs under the newest
 # maintenance code rather than applying it a run late.
 #
@@ -296,38 +373,6 @@ if [[ -x "$HOME/.claude/skills/gstack/bin/gstack-update-check" ]]; then
     "$HOME/.claude/skills/gstack/bin/gstack-update-check" --force || warn "gstack skill update failed"
 fi
 
-# Local drop-ins — ~/.config/myshell/update.d/*.sh, in lexical order, last so
-# they can lean on the toolchain the sections above just refreshed (git, uv,
-# pnpm). scripts/install overwrites THIS file on every bootstrap, so a hand-edit
-# here is lost; update.d is the sanctioned place for machine-local steps. The
-# installer deploys myshell's own drop-ins there and leaves every other file
-# alone, exactly as it treats ~/.zsh.
-#
-# Sourced, not executed, so a drop-in is simply another section of this script:
-# it gets log/sublog/warn, $SUDO/$NO_SUDO, and its warnings reach the Done line
-# below. Executing them instead would isolate them, but the WARNINGS counter
-# lives in this shell and a child process cannot increment it. Three rules
-# follow from sourcing, and the shipped drop-ins document them too:
-#   1. `source` runs inside a `|| warn` list, which suspends set -e for the
-#      whole file — so guard every step with its own `|| warn`, like the
-#      sections above, instead of relying on the ERR trap;
-#   2. a drop-in shares this shell, so wrap any `cd` in a subshell — and keep
-#      `warn` OUTSIDE that subshell, or its counter increment is lost with the
-#      subshell (scripts/install's header calls out the same trap);
-#   3. end the file with `true`: the status reported here is whatever ran last,
-#      and a guard `if` that didn't match returns 1, which would otherwise be
-#      reported as a failed drop-in on every machine that skips it.
-UPDATE_D="$HOME/.config/myshell/update.d"
-if [[ -d "$UPDATE_D" ]]; then
-    for drop_in in "$UPDATE_D"/*.sh; do
-        [[ -f "$drop_in" ]] || continue   # unmatched glob stays literal
-        # shellcheck disable=SC1090  # runtime path, nothing to follow
-        source "$drop_in" || warn "update.d/${drop_in##*/} failed"
-    done
-fi
-
-if [[ "$WARNINGS" -gt 0 ]]; then
-    log "Done with $WARNINGS warning(s) — grep output for 'warning:'."
-else
-    log "Done."
-fi
+# Local drop-ins last (run_drop_ins, defined at the top, says why and how).
+run_drop_ins
+finish
