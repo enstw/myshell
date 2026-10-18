@@ -91,8 +91,8 @@ finish() {
 # picks), skipping myshell's self-update and every package section, so nothing
 # here upgrades a package or asks for sudo. For a caller that wants one refresh
 # without the whole sweep: the init-machine skill (enstw/skill-jz) runs
-# `myshell-update --drop-ins` to pull skill-jz, relink the skills and sync the
-# Simplenote notes.
+# `myshell-update --drop-ins` to pull skill-jz, install or update its `enstw`
+# Claude Code plugin and sync the Simplenote notes.
 case "${1:-}" in
     --drop-ins)
         shift
