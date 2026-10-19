@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Refresh macOS DNS caches and check resolution plus HTTPS connectivity.
+# Deployed to ~/bin/dns-refresh by the shell phase.
+usage() {
+    echo 'usage: dns-refresh [hostname]'
+    echo 'Refresh DNS caches, then check HTTPS (default: api.anthropic.com).'
+}
+
+case ${1:-} in
+    -h|--help) usage; exit 0 ;;
+esac
+if [[ $# -gt 1 ]]; then
+    usage >&2
+    exit 64
+fi
+host=${1:-api.anthropic.com}
+if [[ ! $host =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]; then
+    echo 'error: supply a hostname, without a URL scheme, port or path.' >&2
+    exit 64
+fi
+if [[ $(uname -s) != Darwin ]]; then
+    echo 'error: dns-refresh currently supports macOS only.' >&2
+    exit 1
+fi
+
+echo 'Refreshing macOS DNS caches (sudo may ask for your password)...'
+sudo dscacheutil -flushcache
+sudo killall -HUP mDNSResponder
+
+echo "Checking DNS and HTTPS for $host..."
+if curl --silent --show-error --output /dev/null \
+    --connect-timeout 5 --max-time 10 \
+    --write-out 'IP: %{remote_ip}\nHTTP: %{http_code}\n' "https://$host/"; then
+    echo 'OK: DNS resolution, connection and TLS verification succeeded.'
+    echo 'HTTP 403/404 can be normal at the root of an API; DNS is working.'
+else
+    echo 'Check failed. The curl error above identifies DNS, connection or TLS failure.' >&2
+    echo 'If DNS still fails, toggle Tailscale DNS off/on or renew the Wi-Fi DHCP lease.' >&2
+    exit 1
+fi

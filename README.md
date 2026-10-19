@@ -50,6 +50,14 @@ Read the header banner at the top of `scripts/install` for the cross-cutting rul
 
 ## Scope
 
+On macOS, after switching Wi-Fi networks, run `dns-refresh` to flush the DNS
+caches and check DNS resolution plus HTTPS connectivity to `api.anthropic.com`.
+Use `dns-refresh example.com` to check another host. It may prompt for sudo;
+it does not change DNS servers or Tailscale settings. If Claude still cannot
+connect after the check passes, restart it with `claude --continue`.
+
+From a checkout, run `./scripts/dns-refresh`; the shell phase installs it to `~/bin`.
+
 **In:** shell startup, aliases, prompt/theme, plugins, packages, fonts, timezone/locale, helper scripts.
 
 **Out:** SSH keys, host naming, VM bootstrap, Git identity (prompted at install time; not stored in the repo).
@@ -62,6 +70,7 @@ Read the header banner at the top of `scripts/install` for the cross-cutting rul
 | `scripts/install` | Stage 2. The source of truth — read its header for design rules. `--list-phases` / `--phase LIST`. |
 | `scripts/myshell-update` | Deployed to `~/bin/myshell-update` (alias `u`). Checks whether myshell itself is behind origin and re-bootstraps if so (`MYSHELL_NO_SELF_UPDATE=1` opts out), then refreshes brew/apt/zinit/pnpm/codex/claude/opencode/agy/codegraph/gstack, and last runs the `~/.config/myshell/update.d/*.sh` drop-ins. `myshell-update --drop-ins [NAME...]` runs only the drop-ins (or those whose name contains a NAME, e.g. `skill-jz`): no self-update, no package section, no sudo. |
 | `scripts/check` | Static gate: syntax-checks all three scripts, verifies the output-helper blocks are byte-identical (`--fix` rewrites them from `bootstrap`'s copy). Run before committing. |
+| `scripts/dns-refresh` | macOS DNS cache refresh and bounded DNS/HTTPS check. Deployed to `~/bin/dns-refresh`. |
 | `scripts/ci-roundtrip` | Headless container round-trip (seeds the recorded answers, runs bootstrap twice, asserts). Used by CI. |
 | `scripts/test-prompts` | Interactive-prompt tests — drives `ask`/`confirm` under a real pty and the agent-menu parser directly. Covers what the headless round-trip cannot. |
 | `.github/workflows/ci.yml` | CI: `scripts/check` + `scripts/test-prompts` + both round-trips (sudo user and root) in minimized `ubuntu:latest` containers (Docker publishes that tag as the current LTS), plus a macOS-runner round-trip (brew + purge paths). |

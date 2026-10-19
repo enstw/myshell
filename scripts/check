@@ -19,6 +19,7 @@ bash -n scripts/install
 bash -n scripts/myshell-update
 bash -n scripts/ci-roundtrip
 bash -n scripts/test-prompts
+bash -n scripts/dns-refresh
 # update.d drop-ins are sourced by myshell-update, so a syntax error in one
 # only surfaces at `u` time on whatever machine has it deployed. Gate them here.
 for drop_in in update.d/*.sh; do

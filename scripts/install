@@ -1480,6 +1480,13 @@ deploy_scripts() {
     cp "$REPO_ROOT/scripts/myshell-update" "$HOME/bin/myshell-update"
     chmod +x "$HOME/bin/myshell-update"
 
+    if [[ $OS == macos ]]; then
+        sublog "~/bin/dns-refresh"
+        rm -f "$HOME/bin/dns-refresh"
+        cp "$REPO_ROOT/scripts/dns-refresh" "$HOME/bin/dns-refresh"
+        chmod +x "$HOME/bin/dns-refresh"
+    fi
+
     # Drop the old node-tarball helper from pre-pnpm installs — pnpm now owns
     # the Node runtime, so this deployed copy is obsolete.
     rm -f "$HOME/bin/myshell-install-node-lts"
