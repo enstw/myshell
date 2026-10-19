@@ -10,6 +10,10 @@
 # (`skill-jz`, github.com/enstw/skill-jz, private), installed from GitHub rather
 # than from this checkout. The plugin has no version field, so its version is
 # the commit: every push is an update. The checkout is still pulled for editing.
+# The same marketplace carries two mods, accept-edits-autoallow and
+# long-run-resume, installed and updated alongside it; sessions are set to start
+# in acceptEdits mode, the one accept-edits-autoallow works in. All of this is
+# skipped when claude is missing or not signed in.
 #
 # Before the plugin (until 2026-10-18) the skills were symlinks from
 # ~/.claude/skills into the checkout. With the plugin installed those links are
@@ -31,8 +35,17 @@ if [[ -d "$skilljz_repo/.git" ]]; then
     # plugin, which comes from GitHub, not from this checkout.
     git -C "$skilljz_repo" pull --ff-only || warn "skill-jz: git pull failed"
 
+    # Plugins need a claude that is installed and signed in; without either,
+    # skip them. Signed out, the links are left as they are too: the plugin
+    # may already be installed, and relinking would list every skill twice.
     skilljz_installed=0
-    if command -v claude >/dev/null 2>&1; then
+    skilljz_skip_links=0
+    if ! command -v claude >/dev/null 2>&1; then
+        :
+    elif ! claude auth status 2>/dev/null | grep -q '"loggedIn": true'; then
+        sublog "claude is not signed in — skipping the plugin, mods and settings"
+        skilljz_skip_links=1
+    else
         if claude plugin list --json 2>/dev/null | grep -q "\"id\": \"$skilljz_plugin\""; then
             claude plugin marketplace update skill-jz >/dev/null 2>&1 \
                 || warn "skill-jz: marketplace refresh failed"
@@ -50,11 +63,68 @@ if [[ -d "$skilljz_repo/.git" ]]; then
         else
             warn "skill-jz: could not install the $skilljz_plugin plugin — keeping the skill links"
         fi
+
+        # The two mods ship in the same marketplace (skill-jz's mods/), so they
+        # ride on the refresh above and are skipped when the marketplace was
+        # unreachable. Until 2026-10-19 they came from the claude-mods
+        # marketplace, whose repository is gone: an entry from it is replaced,
+        # never updated, and one the user disabled is dropped, not reinstalled.
+        if [[ "$skilljz_installed" -eq 1 ]]; then
+            skilljz_list=$(claude plugin list --json 2>/dev/null)
+            for skilljz_mod in accept-edits-autoallow long-run-resume; do
+                if grep -q "\"id\": \"$skilljz_mod@claude-mods\"" <<<"$skilljz_list"; then
+                    # Pretty-printed JSON: "enabled" follows its entry's "id".
+                    skilljz_enabled=$(awk -v id="\"$skilljz_mod@claude-mods\"" \
+                        '/"id":/ { cur = ($2 == id ",") } cur && /"enabled":/ { print $2; exit }' \
+                        <<<"$skilljz_list")
+                    if ! claude plugin uninstall "$skilljz_mod@claude-mods" >/dev/null 2>&1; then
+                        warn "skill-jz: could not uninstall $skilljz_mod@claude-mods"
+                        continue
+                    fi
+                    if [[ "${skilljz_enabled%,}" == "false" ]]; then
+                        sublog "removed $skilljz_mod@claude-mods (was disabled, not reinstalled)"
+                        continue
+                    fi
+                    skilljz_list=""
+                fi
+                if grep -q "\"id\": \"$skilljz_mod@skill-jz\"" <<<"$skilljz_list"; then
+                    if skilljz_out=$(claude plugin update "$skilljz_mod@skill-jz" 2>&1); then
+                        sublog "${skilljz_out##*$'\n'}"
+                    else
+                        warn "skill-jz: $skilljz_mod update failed: ${skilljz_out##*$'\n'}"
+                    fi
+                elif claude plugin install "$skilljz_mod" --marketplace enstw/skill-jz --scope user >/dev/null 2>&1; then
+                    sublog "installed the $skilljz_mod@skill-jz mod (run /reload-plugins in open sessions)"
+                else
+                    warn "skill-jz: could not install the $skilljz_mod@skill-jz mod"
+                fi
+            done
+        fi
+
+        # Start sessions in accept-edits mode, the mode accept-edits-autoallow
+        # answers prompts in. Merged into settings.json with every other key
+        # kept; a file jq cannot parse is left alone.
+        skilljz_settings="$HOME/.claude/settings.json"
+        if ! command -v jq >/dev/null 2>&1; then
+            warn "skill-jz: no jq — cannot set the default mode to acceptEdits"
+        elif [[ -f "$skilljz_settings" ]] \
+            && [[ "$(jq -r '.permissions.defaultMode // empty' "$skilljz_settings" 2>/dev/null)" == "acceptEdits" ]]; then
+            :
+        elif { [[ -f "$skilljz_settings" ]] && cat "$skilljz_settings" || echo '{}'; } \
+                | jq '.permissions.defaultMode = "acceptEdits"' >"$skilljz_settings.tmp" 2>/dev/null \
+            && mv "$skilljz_settings.tmp" "$skilljz_settings"; then
+            sublog "default mode set to acceptEdits in ~/.claude/settings.json"
+        else
+            rm -f "$skilljz_settings.tmp"
+            warn "skill-jz: could not set the default mode in $skilljz_settings"
+        fi
     fi
 
     mkdir -p "$skilljz_links"
 
-    if [[ "$skilljz_installed" -eq 1 ]]; then
+    if [[ "$skilljz_skip_links" -eq 1 ]]; then
+        :
+    elif [[ "$skilljz_installed" -eq 1 ]]; then
         # Remove every link into the checkout, live or dangling. Links into
         # other checkouts, and any real directory, are left alone.
         skilljz_removed=0
