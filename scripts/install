@@ -1364,10 +1364,13 @@ command -v qlmanage >/dev/null && ql() { qlmanage -p "$@" >/dev/null 2>&1 &! }
 
 # macOS `caffeinate` muscle memory on Linux: a logind inhibitor lock held for
 # exactly the life of the command (`caffeinate make`, `caffeinate sleep 2h`).
-# No root needed in a local session; over SSH polkit may ask. Skipped on macOS,
-# where the real caffeinate exists.
-command -v caffeinate >/dev/null || { command -v systemd-inhibit >/dev/null &&
-    alias caffeinate='systemd-inhibit --what=idle:sleep:handle-lid-switch --why=caffeinate'; }
+# Bare `caffeinate` holds it until Ctrl-C, as on macOS — bare systemd-inhibit
+# would only list locks, hence a function. No root needed in a local session;
+# over SSH polkit may ask. Skipped on macOS, where the real caffeinate exists.
+command -v caffeinate >/dev/null || { command -v systemd-inhibit >/dev/null && caffeinate() {
+    (( $# )) || set -- sleep infinity
+    systemd-inhibit --what=idle:sleep:handle-lid-switch --why=caffeinate "$@"
+}; }
 
 # This machine is pnpm-only. `npx` maps to `pnpm dlx`; `npm` is guarded with a
 # function (not a flat alias — subcommands differ, e.g. `npm i -g X` is
