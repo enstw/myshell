@@ -7,7 +7,7 @@
 # cd inside a subshell with warn outside it, and end the file with `true`).
 #
 # skill-jz reaches Claude Code as the `enstw` plugin from its own marketplace
-# (`skill-jz`, github.com/enstw/skill-jz, private), installed from GitHub rather
+# (`skill-jz`, github.com/ens-tw/skill-jz, private), installed from GitHub rather
 # than from this checkout. The plugin has no version field, so its version is
 # the commit: every push is an update. The checkout is still pulled for editing.
 # The same marketplace carries two mods, accept-edits-autoallow and
@@ -57,7 +57,7 @@ if [[ -d "$skilljz_repo/.git" ]]; then
                 warn "skill-jz: plugin update failed: ${skilljz_out##*$'\n'}"
             fi
             skilljz_installed=1
-        elif claude plugin install enstw --marketplace enstw/skill-jz --scope user >/dev/null 2>&1; then
+        elif claude plugin install enstw --marketplace ens-tw/skill-jz --scope user >/dev/null 2>&1; then
             sublog "installed the $skilljz_plugin plugin (run /reload-plugins in open sessions)"
             skilljz_installed=1
         else
@@ -93,7 +93,7 @@ if [[ -d "$skilljz_repo/.git" ]]; then
                     else
                         warn "skill-jz: $skilljz_mod update failed: ${skilljz_out##*$'\n'}"
                     fi
-                elif claude plugin install "$skilljz_mod" --marketplace enstw/skill-jz --scope user >/dev/null 2>&1; then
+                elif claude plugin install "$skilljz_mod" --marketplace ens-tw/skill-jz --scope user >/dev/null 2>&1; then
                     sublog "installed the $skilljz_mod@skill-jz mod (run /reload-plugins in open sessions)"
                 else
                     warn "skill-jz: could not install the $skilljz_mod@skill-jz mod"
