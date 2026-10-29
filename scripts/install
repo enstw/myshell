@@ -94,8 +94,11 @@ set -Eeuo pipefail
 #   and machine-specific, so nothing installs them unasked. TinyTeX is shared
 #   by the quarto and pandoc entries so selecting both installs TeX once
 #   (~200MB, user-local, no sudo; chosen over BasicTeX/texlive-xetex and full
-#   MacTeX). quarto and Zed come from brew casks on macOS and from upstream's
-#   .deb / install script on Ubuntu. proxmark3 is macOS-only via the
+#   MacTeX). With quarto also selected, the pandoc entry links Quarto's
+#   bundled pandoc into ~/.local/bin instead of installing a second one, so
+#   one pandoc version serves both. quarto and Zed come from brew casks on
+#   macOS and from upstream's .deb / install script on Ubuntu. proxmark3 is
+#   macOS-only via the
 #   RfidResearchGroup tap: on Ubuntu it needs a from-source build whose
 #   dependency list and Makefile flags move with the firmware, so the step
 #   warns and points at the upstream guide rather than carrying that here.
@@ -383,7 +386,7 @@ sudo_work_pending() {
             # pandoc. Readable at all because warm_sudo now runs after the
             # questions rather than before them.
             [[ ",$opt," == *,quarto,* ]] && ! command -v quarto >/dev/null && return 0   # install_quarto
-            [[ ",$opt," == *,pandoc,* ]] && ! command -v pandoc >/dev/null && return 0   # install_pandoc
+            [[ ",$opt," == *,pandoc,* && ",$opt," != *,quarto,* ]] && ! command -v pandoc >/dev/null && return 0   # install_pandoc (links Quarto's with quarto)
             id -nG "$(id -un)" | grep -qw docker || return 0                       # configure_docker_group
             [[ -f /etc/dpkg/dpkg.cfg.d/excludes ]] && return 0                     # unminimize_ubuntu
         fi
@@ -1850,13 +1853,17 @@ install_optional_apps() {
     sublog "selected: $selected (rm $STATE_DIR/optional-apps to re-choose)"
     for app in ${selected//,/ }; do
         case "$app" in
-            quarto)    try_install "quarto"    install_quarto ;;
-            pandoc)    try_install "pandoc"    install_pandoc ;;
-            proxmark3) try_install "proxmark3" install_proxmark3 ;;
-            zed)       try_install "Zed"       install_zed ;;
-            *)         warn "unknown optional app '$app' in $STATE_DIR/optional-apps (skipping)" ;;
+            quarto|pandoc|proxmark3|zed) ;;
+            *) warn "unknown optional app '$app' in $STATE_DIR/optional-apps (skipping)" ;;
         esac
     done
+    # Fixed order, not the answer's: pandoc reuses Quarto's bundled copy, so
+    # quarto must be in place first even when the answer was "2,1".
+    [[ ",$selected," == *,quarto,* ]]    && try_install "quarto"    install_quarto
+    [[ ",$selected," == *,pandoc,* ]]    && try_install "pandoc"    install_pandoc
+    [[ ",$selected," == *,proxmark3,* ]] && try_install "proxmark3" install_proxmark3
+    [[ ",$selected," == *,zed,* ]]       && try_install "Zed"       install_zed
+    true
 }
 
 # brew_cask_install CASK — check-first cask install. Casks are a separate
@@ -1934,6 +1941,31 @@ install_quarto() {
 
 install_pandoc() {
     log "Installing pandoc..."
+    # Quarto ships its own pandoc and renders with it, so a second, separately
+    # versioned pandoc would only mean two copies printing the same document
+    # differently. With quarto present, `pandoc` is Quarto's: a link in
+    # ~/.local/bin, which precedes the system bin dirs in PATH, so it also
+    # shadows a pandoc installed earlier and follows Quarto's upgrades.
+    local qbin qpandoc arch
+    # The first line of `quarto --paths` is its bin dir. No `| head`: under
+    # pipefail quarto's SIGPIPE would fail the whole capture.
+    if command -v quarto >/dev/null && qbin=$(quarto --paths 2>/dev/null) && qbin=${qbin%%$'\n'*} && [[ -n "$qbin" ]]; then
+        arch=$(uname -m); [[ "$arch" == arm64 ]] && arch=aarch64
+        for qpandoc in "$qbin/tools/pandoc" "$qbin/tools/$arch/pandoc"; do
+            [[ -x "$qpandoc" ]] || continue
+            mkdir -p "$HOME/.local/bin"
+            ln -sfn "$qpandoc" "$HOME/.local/bin/pandoc"
+            sublog "~/.local/bin/pandoc -> $qpandoc (Quarto's bundled pandoc)"
+            # On macOS `brew shellenv` puts the brew bin dir ahead of
+            # ~/.local/bin, so an earlier brew pandoc would still win: remove it.
+            if [[ "$OS" == macos && -n "$(brew_purge_targets pandoc)" ]]; then
+                brew_purge_one pandoc && sublog "removed brew:pandoc (Quarto's is the one pandoc now)"
+            fi
+            install_tinytex
+            return 0
+        done
+        sublog "no bundled pandoc under $qbin/tools — installing a standalone one"
+    fi
     if command -v pandoc >/dev/null; then
         sublog "already installed ($(command -v pandoc)) — skipping"
     elif [[ "$OS" == macos ]]; then
