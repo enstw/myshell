@@ -367,12 +367,6 @@ if command -v codegraph &>/dev/null; then
     codegraph upgrade || warn "CodeGraph upgrade failed"
 fi
 
-# Claude Code gstack skill — use the skill's own updater (same as /gstack-upgrade).
-if [[ -x "$HOME/.claude/skills/gstack/bin/gstack-update-check" ]]; then
-    log "Updating Claude gstack skill..."
-    "$HOME/.claude/skills/gstack/bin/gstack-update-check" --force || warn "gstack skill update failed"
-fi
-
 # Local drop-ins last (run_drop_ins, defined at the top, says why and how).
 run_drop_ins
 finish

@@ -117,7 +117,7 @@ set -Eeuo pipefail
 #   npm-global prefixes, and warns on any other lingering npm-globals.
 #
 # - bun: installed via its own bun.sh installer into ~/.bun — a peer runtime
-#   required by the gstack skill, NOT part of the pnpm-only policy. It doesn't
+#   (it runs the Telegram channel bridge), NOT part of the pnpm-only policy. It doesn't
 #   go through npm, so leave it alone; it isn't a stray npm-ish tool to purge.
 #
 # - Interactive answers: every prompt runs up front in gather_answers, and
@@ -728,7 +728,7 @@ MACOS_EXTRA_FORMULAE=(
 UBUNTU_SHELL_PKGS=(git zsh curl ca-certificates)
 # unzip is required by the bun.sh installer (it errors "unzip is required to
 # install bun" otherwise); without it install_bun fails soft on minimal
-# Ubuntu and the gstack skill loses its bun runtime. gpg serves
+# Ubuntu and the Telegram channel bridge loses its bun runtime. gpg serves
 # apt_keyring_repo, which runs at the end of this same phase.
 UBUNTU_EXTRA_PKGS=(
     jq tmux fzf ripgrep 7zip
@@ -1022,7 +1022,7 @@ install_bun() {
     # bun isn't in default Homebrew (requires the oven-sh/bun tap) and isn't
     # in apt, so use the upstream installer on both OSes. Drops binary +
     # completions into ~/.bun. PATH is picked up via ~/.zshenv; completions
-    # are sourced from ~/.zsh/bun.zsh. Needed by the gstack skill's setup.
+    # are sourced from ~/.zsh/bun.zsh. Runs the Telegram channel bridge.
     if command -v bun >/dev/null; then
         sublog "already installed ($(command -v bun)) — skipping"
         return 0

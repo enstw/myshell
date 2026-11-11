@@ -68,7 +68,7 @@ From a checkout, run `./scripts/dns-refresh`; the shell phase installs it to `~/
 |------|---------|
 | `bootstrap` | Stage 1. Run this. |
 | `scripts/install` | Stage 2. The source of truth — read its header for design rules. `--list-phases` / `--phase LIST`. |
-| `scripts/myshell-update` | Deployed to `~/bin/myshell-update` (alias `u`). Checks whether myshell itself is behind origin and re-bootstraps if so (`MYSHELL_NO_SELF_UPDATE=1` opts out), then refreshes brew/apt/zinit/pnpm/codex/claude/opencode/agy/codegraph/gstack, and last runs the `~/.config/myshell/update.d/*.sh` drop-ins. `myshell-update --drop-ins [NAME...]` runs only the drop-ins (or those whose name contains a NAME, e.g. `skill-jz`): no self-update, no package section, no sudo. |
+| `scripts/myshell-update` | Deployed to `~/bin/myshell-update` (alias `u`). Checks whether myshell itself is behind origin and re-bootstraps if so (`MYSHELL_NO_SELF_UPDATE=1` opts out), then refreshes brew/apt/zinit/pnpm/codex/claude/opencode/agy/codegraph, and last runs the `~/.config/myshell/update.d/*.sh` drop-ins. `myshell-update --drop-ins [NAME...]` runs only the drop-ins (or those whose name contains a NAME, e.g. `skill-jz`): no self-update, no package section, no sudo. |
 | `scripts/check` | Static gate: syntax-checks all three scripts, verifies the output-helper blocks are byte-identical (`--fix` rewrites them from `bootstrap`'s copy). Run before committing. |
 | `scripts/dns-refresh` | macOS DNS cache refresh and bounded DNS/HTTPS check. Deployed to `~/bin/dns-refresh`. |
 | `scripts/ci-roundtrip` | Headless container round-trip (seeds the recorded answers, runs bootstrap twice, asserts). Used by CI. |
