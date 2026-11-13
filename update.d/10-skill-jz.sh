@@ -10,10 +10,11 @@
 # (`skill-jz`, github.com/ens-tw/skill-jz, private), installed from GitHub rather
 # than from this checkout. The plugin has no version field, so its version is
 # the commit: every push is an update. The checkout is still pulled for editing.
-# The same marketplace carries two mods, accept-edits-autoallow and
-# long-run-resume, installed and updated alongside it; sessions are set to start
-# in acceptEdits mode, the one accept-edits-autoallow works in. All of this is
-# skipped when claude is missing or not signed in.
+# Every other plugin the same marketplace lists is a mod (skill-jz's mods/),
+# installed and updated alongside it; the names are read from the marketplace,
+# so a mod added to skill-jz needs no change here. Sessions are set to start in
+# acceptEdits mode, the one the accept-edits-autoallow mod works in. All of
+# this is skipped when claude is missing or not signed in.
 #
 # Before the plugin (until 2026-10-18) the skills were symlinks from
 # ~/.claude/skills into the checkout. With the plugin installed those links are
@@ -64,14 +65,29 @@ if [[ -d "$skilljz_repo/.git" ]]; then
             warn "skill-jz: could not install the $skilljz_plugin plugin — keeping the skill links"
         fi
 
-        # The two mods ship in the same marketplace (skill-jz's mods/), so they
+        # The mods ship in the same marketplace (skill-jz's mods/), so they
         # ride on the refresh above and are skipped when the marketplace was
-        # unreachable. Until 2026-10-19 they came from the claude-mods
-        # marketplace, whose repository is gone: an entry from it is replaced,
-        # never updated, and one the user disabled is dropped, not reinstalled.
+        # unreachable. Their names are every plugin its manifest lists but
+        # enstw, read from the copy claude keeps of it. Until 2026-10-19 the
+        # first two came from the claude-mods marketplace, whose repository is
+        # gone: an entry from it is replaced, never updated, and one the user
+        # disabled is dropped, not reinstalled.
         if [[ "$skilljz_installed" -eq 1 ]]; then
             skilljz_list=$(claude plugin list --json 2>/dev/null)
-            for skilljz_mod in accept-edits-autoallow long-run-resume; do
+            skilljz_mods=""
+            if command -v jq >/dev/null 2>&1; then
+                skilljz_manifest=$(claude plugin marketplace list --json 2>/dev/null \
+                    | jq -r '.[] | select(.name == "skill-jz") | .installLocation' 2>/dev/null)
+                skilljz_mods=$(jq -r '.plugins[].name | select(. != "enstw" and test("^[a-z0-9][a-z0-9-]*$"))' \
+                    "$skilljz_manifest/.claude-plugin/marketplace.json" 2>/dev/null)
+            fi
+            if [[ -z "$skilljz_mods" ]]; then
+                # No jq, or no manifest where claude said it keeps one: the
+                # mods already installed are still updated, a new one waits.
+                warn "skill-jz: could not read the marketplace's plugin list — updating the installed mods only"
+                skilljz_mods=$(sed -n 's/^ *"id": "\([a-z0-9][a-z0-9-]*\)@skill-jz",*$/\1/p' <<<"$skilljz_list" | grep -vx enstw)
+            fi
+            for skilljz_mod in $skilljz_mods; do
                 if grep -q "\"id\": \"$skilljz_mod@claude-mods\"" <<<"$skilljz_list"; then
                     # Pretty-printed JSON: "enabled" follows its entry's "id".
                     skilljz_enabled=$(awk -v id="\"$skilljz_mod@claude-mods\"" \
